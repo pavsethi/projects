@@ -1,10 +1,3 @@
-/********************************************************************************* 
-* Pav Sethi, pssethi
-* 2023 Winter CSE101 PA #5
-* List.cpp
-* Implementation of List ADT 
-*********************************************************************************/ 
-
 #include<iostream>
 #include<string>
 #include<stdexcept>
