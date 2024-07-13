@@ -1,0 +1,77 @@
+.tasklist {
+    margin-top: 20px;
+}
+.task-item {
+    border: 1px solid #ccc;
+    padding: 10px;
+    margin-bottom: 10px;
+    border-radius: 5px;
+    background-color: #f9f9f9;
+}
+
+.task-title {
+    font-size: 1.3em;
+    font-weight: bold;
+}
+.task-meta {
+    text-align: right;
+}
+
+.task-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+
+.task-details {
+    margin-bottom: 10px;
+}
+
+.task-details strong {
+    display: inline-block;
+    width: 100px;
+}
+.actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.sidebar {
+    display: block;
+}
+
+.calendar {
+    font-family: Arial, sans-serif;
+    max-width: 300px;
+    margin: auto;
+    border: 1px solid;
+    border-radius: 0.5rem;
+}
+
+.calendar-header {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px;
+    background-color: white;
+    border-radius: 5px;
+}
+
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr); /* 7 days per week */
+    gap: 3px;
+    padding: 10px;
+}
+
+.calendar-day {
+    padding:1px;
+}
+
+.highlight {
+    background-color: #ff0; /* Highlight color for days with tasks */
+    color: #000;
+}

@@ -1,0 +1,42 @@
+[[extend 'layout.html']]
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Create Task</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.0/css/bulma.min.css">
+    <link rel="stylesheet" href="[[=URL('static')]]/css/styles.css">
+    <style>
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding-top: 50px;
+            padding-bottom: 20px;
+        }
+        .title {
+            text-align: center;
+            color: black;
+            margin-bottom: 30px;
+        }
+        .button-container {
+            text-align: center;
+            margin-top: 20px;
+        }
+        .back-link {
+            margin-top: 20px;
+            font-size: 1.1em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="title" style="color:white;">Create Task</h1>
+        <div>
+            [[=form]]
+        </div>
+        <div class="button-container">
+            <a class="button is-link" href="[[=URL('index')]]">Back to tasks</a>
+        </div>
+    </div>
+</body>
+</html>

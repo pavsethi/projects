@@ -1,0 +1,128 @@
+[[extend 'layout.html']]
+
+<base href="[[=URL('static')]]/">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.0/css/bulma.min.css">
+<link rel="stylesheet" href="css/styles.css">
+
+<body>
+    <div id="app" class="container">
+        <div class="column">
+            <div class="actions">
+                <a role="button" class="button is-primary" href="[[=URL('create_task')]]">Create Task</a>
+                <button class="button" @click="toggleSidebar">
+                    <span class="icon">
+                        <i class="fas fa-filter"></i>
+                    </span>
+                    <span>Filters</span>
+                </button>
+            </div>
+
+            <div v-if="isSidebarActive" class="sidebar">
+                <div class="field">
+                    <label class="label">Select a filter</label>
+                    <div class="control">
+                        <div class="select">
+                            <select v-model="selectedFilter">
+                                <option value="">Select a filter</option>
+                                <option value="date_created">Date Created</option>
+                                <option value="deadline">Deadline</option>
+                                <option value="status">Status</option>
+                                <option value="created_by_self">Created by Self</option>
+                                <option value="assigned_to_self">Assigned by Self</option>
+                                <option value="created_by_specific_user">Created by Specific User</option>
+                                <option value="assigned_to_specific_user">Assigned to Specific User</option>
+                                <option value="created_by_managed_user">Created by Managed User</option>
+                                <option value="assigned_to_managed_user">Assigned to Managed User</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="field" v-if="selectedFilter === 'created_by_specific_user' || selectedFilter === 'assigned_to_specific_user'">
+                    <label class="label">Select User:</label>
+                    <div class="control">
+                        <div class="select">
+                            <select @change="updateFilterParams('user_id', $event.target.value)">
+                                <option value="">Select a User</option>
+                                <option v-for="user in users" :value="user.id">{{ user.first_name }} {{ user.last_name }}</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="field" v-if="selectedFilter === 'status'">
+                    <label class="label">Status:</label>
+                    <div class="control">
+                        <div class="select">
+                            <select @change="updateFilterParams('status', $event.target.value)">
+                                <option value="">Select a Status</option>
+                                <option value="pending">Pending</option>
+                                <option value="acknowledged">Acknowledged</option>
+                                <option value="rejected">Rejected</option>
+                                <option value="completed">Completed</option>
+                                <option value="failed">Failed</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="field">
+                    <button class="button is-primary" @click="applyFilter">Apply Filter</button>
+                </div>
+            </div>
+            <div class="column is-centered">
+                <div class="calendar">
+                    <div class="calendar-header">
+                      <button @click="prevMonth">&lt;</button>
+                      <span>{{ monthNames[currentMonth] }} {{ currentYear }}</span>
+                      <button @click="nextMonth">&gt;</button>
+                    </div>
+                    <div class="calendar-grid">
+                      <div class="calendar-day" v-for="day in days" :class="{ 'highlight': hasTask(day.date) }">
+                        {{ day.date.getDate() }}
+                      </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tasklist">
+                <div v-for="task in unselected_tasks" :key="task.id" class="box">
+                    <div class="task-details">
+                        <div class="task-header">
+                            <div class="task-title">{{ task.title }}</div>
+                            <div class="task-meta">
+                                <div><strong>Deadline:</strong> {{ task.deadline }}</div>
+                                <div><strong>Status:</strong> {{ task.status }}</div>
+                            </div>
+                        </div>
+                        <div class="task-description">
+                            {{ task.description }}
+                        </div>
+                    </div>
+                    <a role="button" class="button is-primary" @click="editTask(task.id)">Edit Task</a>
+                    <button class="button" @click="task.showComments = !task.showComments">
+                        Comments ({{ task.comments && task.comments.length ? task.comments.length : 0 }})
+                    </button>
+
+                    <div v-if="task.showComments" class="comments-section">
+                        <div v-for="comment in task.comments" :key="comment.id">
+                            <p>{{ comment.author }}: {{ comment.content }}</p>
+                        </div>
+                        <form @submit.prevent="submitComment(task.id)" class="field has-addons">
+                            <div class="control is-expanded">
+                                <input v-model="task.newComment" class="input is-small" type="text" placeholder="Add a comment..." required>
+                            </div>
+                            <div class="control">
+                                <button type="submit" class="button is-info is-small">Submit</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.6.8/axios.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.4.21/vue.global.prod.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1.10.7/dayjs.min.js"></script>
+    <script src="js/index.js"></script>
+</body>

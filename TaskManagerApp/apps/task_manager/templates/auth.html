@@ -1,0 +1,30 @@
+[[extend "layout.html"]]
+<style>
+    .auth-container {
+      max-width: 80%;
+      min-width: 400px;
+      margin-left: auto;
+      margin-right: auto;
+      border: 1px solid #e1e1e1;
+      border-radius: 10px;
+      padding: 20px;
+    }
+    .info-message {
+      color: #ffffff; 
+      background-color: #ff4500; 
+      border-color: #ff6347;
+      padding: 15px;
+      border-radius: 5px; 
+      margin-bottom: 20px;
+      font-size: 18px;
+      font-weight: bold;
+      text-align: center;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+</style>
+<div class="auth-container">
+  <div class="info-message">
+      If you are the first user, please do not select a manager, as no managers are available yet.
+  </div>
+  [[=form]]
+</div>
