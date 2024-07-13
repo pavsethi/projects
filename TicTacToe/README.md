@@ -1,6 +1,4 @@
-The test for the assignment will be posted here:
-https://github.com/ucsc2024-cse183/class_code/assignments/assignment3/README.md
-
+My implementation of a unbeatable Tic-Tac-Toe bot. The bot will either win or tie every single game. The bot chooses the best move to counter the players move based on the MiniMax algorithm. There is a UI to allow people to play the game.
 
 CITATIONS:
 
