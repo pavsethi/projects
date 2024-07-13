@@ -1,10 +1,3 @@
-/********************************************************************************* 
-* Pav Sethi, pssethi
-* 2023 Winter CSE101 PA #4
-* Matrix.h
-* Header file for Matrix ADT 
-*********************************************************************************/ 
-
 #pragma once
 #include<stdbool.h>
 #include <string.h>
