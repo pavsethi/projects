@@ -1,9 +1,3 @@
-/********************************************************************************* 
-* Pav Sethi, pssethi
-* 2023 Winter CSE101 PA #4
-* MatrixTest.c
-* Tests each individual function for Matrix ADT 
-*********************************************************************************/ 
 #include<stdlib.h>
 #include<stdio.h>
 #include<stdbool.h>
