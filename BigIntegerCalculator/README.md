@@ -1,8 +1,7 @@
-PA 6 - BigInteger ADT
+BigInteger ADT
 
 
 This program implements a BigInteger ADT in C++ as well as a program to perform the addition, subtration, and multiplication arithmetic on BigIntegers.
-Cite: TA Mike Psuedocode
 
 
 The files included are:
