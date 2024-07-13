@@ -1,5 +1,5 @@
 #------------------------------------------------------------------------------
-#  Makefile for CSE 101 Programming Assignment 6
+# 
 #
 #  make                     makes Arithmetic
 #  make BigIntegerTest      makes BigIntegerTest
