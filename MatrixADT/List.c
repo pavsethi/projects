@@ -1,10 +1,3 @@
-/********************************************************************************* 
-* Pav Sethi, pssethi
-* 2023 Winter CSE101 PA #1
-* List.c
-*  Implementation file for Integer List ADT. Used Queue.c example
-*********************************************************************************/ 
-
 #include<stdio.h>
 #include<stdlib.h>
 #include<assert.h>
