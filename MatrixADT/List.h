@@ -1,10 +1,3 @@
-/********************************************************************************* 
-* Pav Sethi, pssethi
-* 2023 Winter CSE101 PA #1
-* List.h
-* Header file for Integer List ADT 
-*********************************************************************************/ 
-
 #ifndef LIST_H_INCLUDE_
 #define LIST_H_INCLUDE_
 #include<stdbool.h>
