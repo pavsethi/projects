@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.0/css/bulma.min.css">
+    <title>Tic Tac Toe Game</title>
+</head>
+<style>
+    .title{
+        font-size: 50px;
+        font-family: 'Courier New', Courier, monospace;
+    }
+    .outer-board {
+        margin-top: 50px;
+        margin-bottom: 50px;
+    }
+    .cell {
+        width: 100px;
+        height: 100px;
+        border: 1px solid #bbb;
+        cursor: pointer;
+        font-size: 40px;
+        text-align: center;
+        vertical-align: middle;
+    }
+    .centered-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+</style>
+<body>
+    <div id="myapp">
+        <div class="centered-container">
+            <h1 class="title"> Tic Tac Toe Game</h1>
+            <div class="outer-board has-text-centered">
+                <table>
+                    <tr v-for="(row, rowIndex) in board" :key="rowIndex">
+                        <td v-for="(cell, cellIndex) in row" :key="cellIndex">
+                            <button 
+                                @click="setPlayerMove(rowIndex, cellIndex)" 
+                                :class="'cell-' + rowIndex + '-' + cellIndex + ' cell'"
+                            >
+                                {{cell}}
+                            </button>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+            <button class="button is-danger reset" @click="resetGame()">Reset</button>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="tictactoe.js"></script>
+</body>
+</html>
