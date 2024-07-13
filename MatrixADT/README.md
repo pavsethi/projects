@@ -1,4 +1,4 @@
-PA 4 - Matrix ADT
+Matrix ADT
 
 
 This program implements a Matrix ADT as well as a program to perform Matrix operations
