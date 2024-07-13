@@ -1,6 +1,3 @@
-Assignment 7 - A (Huffman Coding) Tree Grows in Santa Cruz
-
-
 This program implements a Huffman encoder and decoder. The Huffman encoder will read an input file, find its Huffman encoding, and use the encoding to compress the file. The decoder will take in a compressed file and decompress it, bringing it back to its original size. We will create four abstract data types: nodes, priority queues, codes, and stacks. 
 
 The files included are:
