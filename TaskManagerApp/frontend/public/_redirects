@@ -1,0 +1,4 @@
+# SPA fallback for Netlify / Cloudflare Pages: serve index.html for all routes
+# so client-side deep links (e.g. /tasks/3/edit) don't 404. (Vercel uses
+# vercel.json instead.)
+/*    /index.html   200
