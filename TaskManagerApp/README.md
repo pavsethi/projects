@@ -7,6 +7,9 @@ edit is scoped to your place in the reporting chain.
 Originally built as a school project on [py4web](https://py4web.com/); this
 repository is a modern rewrite of that app.
 
+## Hosted App
+https://projects-henna-pi.vercel.app/login
+
 ## Tech stack
 
 | Layer      | Technology                                              |
