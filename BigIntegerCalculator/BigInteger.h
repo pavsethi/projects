@@ -1,9 +1,3 @@
-//-----------------------------------------------------------------------------
-// Pav Sethi, pssethi
-// 2023 Winter CSE101 PA #6
-// BigInteger.h
-// Header file for the BigInteger ADT
-//-----------------------------------------------------------------------------
 #include<iostream>
 #include<string>
 #include"List.h"

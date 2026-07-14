@@ -1,10 +1,3 @@
-/********************************************************************************* 
-* Pav Sethi, pssethi
-* 2023 Winter CSE101 PA #6
-* Arithmetic.cpp
-* Runs arithmetic operations on two strings
-*********************************************************************************/ 
-
 #include<iostream>
 #include<fstream>
 #include<string>

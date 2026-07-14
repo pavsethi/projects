@@ -1,9 +1,3 @@
-/********************************************************************************* 
-* Pav Sethi, pssethi
-* 2023 Winter CSE101 PA #5
-* ListTest.c
-* Tests each individual function for List ADT 
-*********************************************************************************/ 
 #include<iostream>
 #include<string>
 #include<stdexcept>

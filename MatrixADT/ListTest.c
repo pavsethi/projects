@@ -1,10 +1,3 @@
-/********************************************************************************* 
-* Pav Sethi, pssethi
-* 2023 Winter CSE101 PA #1
-* ListTest.c
-* Tests each individual function for Integer List ADT 
-*********************************************************************************/ 
-
 #include<stdio.h>
 #include<stdlib.h>
 #include<stdbool.h>

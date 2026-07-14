@@ -1,10 +1,3 @@
-/********************************************************************************* 
-* Pav Sethi, pssethi
-* 2023 Winter CSE101 PA #6
-* BigInteger.cpp
-* Implementation of BigInteger ADT 
-*********************************************************************************/ 
-
 #include<iostream>
 #include<string>
 #include<stdexcept>

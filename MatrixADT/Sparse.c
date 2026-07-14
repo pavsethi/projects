@@ -1,10 +1,3 @@
-/********************************************************************************* 
-* Pav Sethi, pssethi
-* 2023 Winter CSE101 PA #4
-* Sparse.c
-* Main Program. Sparce takes in a input file and output file argument
-*********************************************************************************/ 
-
 #include<stdio.h>
 #include<stdlib.h>
 #include<stdbool.h>
