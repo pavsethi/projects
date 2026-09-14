@@ -46,16 +46,35 @@ class AnthropicProvider:
             )
         return out
 
+    @staticmethod
+    def _split_system(messages: list[dict]) -> tuple[str, list[dict]]:
+        """Lift ``role: system`` turns into the top-level ``system`` string.
+
+        Our internal message format lets orchestrators put a system prompt in the
+        messages list, but the Messages API takes ``system`` as a top-level
+        parameter (a leading ``role: system`` message is rejected). Concatenate
+        any system turns and pass the rest through unchanged.
+        """
+        system_parts = [str(m["content"]) for m in messages if m.get("role") == "system"]
+        convo = [m for m in messages if m.get("role") != "system"]
+        return "\n\n".join(system_parts), convo
+
     async def complete(self, request: LLMRequest) -> ModelResponse:  # pragma: no cover
         start = time.perf_counter()
+        system, convo = self._split_system(request.messages)
+        # Note: sampling params (temperature/top_p/top_k) were removed on the
+        # Claude 5-family models and the current SDK drops `temperature` from
+        # messages.create() entirely -- so it is intentionally not passed.
+        kwargs: dict = {
+            "model": self.model,
+            "max_tokens": request.max_tokens,
+            "tools": self._to_anthropic_tools(request.tools),
+            "messages": convo,
+        }
+        if system:
+            kwargs["system"] = system
         try:
-            message = await self._client.messages.create(
-                model=self.model,
-                max_tokens=request.max_tokens,
-                temperature=request.temperature,
-                tools=self._to_anthropic_tools(request.tools),
-                messages=request.messages,
-            )
+            message = await self._client.messages.create(**kwargs)
         except Exception as exc:  # noqa: BLE001 - report, never crash the sweep
             return ModelResponse(
                 error=f"{type(exc).__name__}: {exc}",

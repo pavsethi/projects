@@ -73,7 +73,9 @@ class LLMRequest(BaseModel):
     messages: list[dict[str, Any]]
     tools: list[dict[str, Any]] = Field(default_factory=list)
     temperature: float = 0.0
-    max_tokens: int = 1024
+    # Generous default: current Claude models run adaptive thinking by default,
+    # which can consume a small budget before the tool call is emitted.
+    max_tokens: int = 4096
     # Carries the task id so replay/mock providers can look up a fixture. Real
     # providers ignore it.
     metadata: dict[str, Any] = Field(default_factory=dict)

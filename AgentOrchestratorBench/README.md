@@ -90,6 +90,7 @@ Key seams:
 | Provider interface | `providers/base.py` | one async `complete()` every backend implements |
 | Mock/replay provider | `providers/mock.py` | deterministic, seeded — the zero-key path |
 | Caching | `providers/cache.py` | content-addressed, so re-runs are free |
+| Retry/backoff | `providers/retry.py` | exponential backoff + jitter on transient 429/5xx |
 | Orchestrator interface | `orchestrators/base.py` | `route(task, provider) → output` |
 | Hand-rolled router | `orchestrators/handrolled.py` | the reference system under test |
 | BFCL suite | `suites/bfcl.py` | portable JSONL + native BFCL loader |
