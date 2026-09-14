@@ -1,10 +1,5 @@
 # Methodology
 
-This document is the part a careful reader (or interviewer) will want: exactly
-what is measured, how it is graded, what the numbers do and don't capture, and
-how to reproduce them. The goal is that the harness is defensible even when its
-conclusions are debated.
-
 ## What is measured
 
 For each `(orchestrator, model, provider)` sweep over a task suite:
