@@ -1,0 +1,67 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "orchbench"
+version = "0.1.0"
+description = "A reproducible eval harness for LLM agent orchestrators, with a failure-mode taxonomy. Ships a BFCL routing-accuracy suite."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Pavnit Sethi" }]
+keywords = ["llm", "agents", "evaluation", "benchmark", "bfcl", "tool-use", "orchestration"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "pydantic>=2.6,<3",
+    "typer>=0.12",
+]
+
+[project.urls]
+Homepage = "https://github.com/pavsethi/projects/tree/main/AgentOrchestratorBench"
+
+[project.optional-dependencies]
+# Real LLM providers. Everything runs on the mock provider without these.
+anthropic = ["anthropic>=0.39"]
+# Framework adapters, kept optional so the core harness installs with no heavy deps.
+langgraph = ["langgraph>=0.2", "langchain-core>=0.3"]
+agentframework = ["agent-framework>=1.0.0b1"]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+[project.scripts]
+orchbench = "orchbench.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/orchbench"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# B008: Typer/FastAPI intentionally call Option()/Argument() in defaults.
+ignore = ["B008"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_ignores = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+files = ["src/orchbench"]

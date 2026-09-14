@@ -1,0 +1,70 @@
+import pathlib
+
+from orchbench.providers.cache import CachingProvider
+from orchbench.providers.mock import MockProvider
+from orchbench.suites.bfcl import load_bfcl_native, load_jsonl
+from orchbench.types import LLMRequest, ModelResponse
+
+SAMPLE = pathlib.Path(__file__).resolve().parents[1] / "data" / "bfcl_sample.jsonl"
+
+
+def test_sample_loads_and_has_categories():
+    tasks = load_jsonl(SAMPLE)
+    assert len(tasks) >= 8
+    assert {t.category for t in tasks} == {"simple", "multiple", "parallel"}
+    # Every task has at least one ground-truth call and a matching tool.
+    for t in tasks:
+        assert t.ground_truth
+        tool_names = {tool.name for tool in t.tools}
+        for gt in t.ground_truth:
+            assert gt.name in tool_names
+
+
+def test_load_bfcl_native(tmp_path):
+    func_file = tmp_path / "func.jsonl"
+    ans_file = tmp_path / "ans.jsonl"
+    func_file.write_text(
+        '{"id": "simple_0", "question": [[{"role": "user", "content": "weather?"}]], '
+        '"function": [{"name": "get_weather", "description": "", '
+        '"parameters": {"type": "object", "properties": {"loc": {"type": "string"}}}}]}\n'
+    )
+    ans_file.write_text('{"id": "simple_0", "ground_truth": [{"get_weather": {"loc": ["SF"]}}]}\n')
+    tasks = load_bfcl_native(func_file, ans_file)
+    assert len(tasks) == 1
+    assert tasks[0].query == "weather?"
+    assert tasks[0].tools[0].name == "get_weather"
+    assert tasks[0].ground_truth[0].args == {"loc": ["SF"]}
+
+
+class _CountingProvider:
+    name = "counting"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def complete(self, request: LLMRequest) -> ModelResponse:
+        self.calls += 1
+        return ModelResponse(text="ok", prompt_tokens=10, completion_tokens=2)
+
+
+async def test_cache_avoids_second_call(tmp_path):
+    inner = _CountingProvider()
+    cached = CachingProvider(inner, tmp_path / "cache")
+    req = LLMRequest(model="m", messages=[{"role": "user", "content": "hi"}])
+
+    first = await cached.complete(req)
+    second = await cached.complete(req)
+
+    assert inner.calls == 1  # second served from disk
+    assert first.cached is False
+    assert second.cached is True
+
+
+async def test_cache_does_not_store_errors(tmp_path):
+    tasks = load_jsonl(SAMPLE)
+    # Mock with no fixtures -> error responses, which must not be cached.
+    provider = CachingProvider(MockProvider({}), tmp_path / "c2")
+    req = LLMRequest(model="m", messages=[], metadata={"task_id": tasks[0].id})
+    resp = await provider.complete(req)
+    assert resp.error is not None
+    assert not any((tmp_path / "c2").iterdir())
