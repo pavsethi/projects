@@ -21,7 +21,13 @@ class AnthropicProvider:
 
     name = "anthropic"
 
-    def __init__(self, model: str = "claude-sonnet-5", api_key: str | None = None) -> None:
+    def __init__(
+        self,
+        model: str = "claude-sonnet-5",
+        api_key: str | None = None,
+        thinking: bool = True,
+        effort: str | None = None,
+    ) -> None:
         try:
             from anthropic import AsyncAnthropic
         except ImportError as exc:  # pragma: no cover - exercised only with extra
@@ -30,6 +36,11 @@ class AnthropicProvider:
             ) from exc
 
         self.model = model
+        # Current Claude models run adaptive thinking by default; thinking=False
+        # disables it (cheaper/faster for pure routing). effort tunes depth/spend
+        # via output_config; None leaves the server default.
+        self.thinking = thinking
+        self.effort = effort
         self._client = AsyncAnthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
 
     @staticmethod
@@ -73,6 +84,10 @@ class AnthropicProvider:
         }
         if system:
             kwargs["system"] = system
+        if not self.thinking:
+            kwargs["thinking"] = {"type": "disabled"}
+        if self.effort:
+            kwargs["output_config"] = {"effort": self.effort}
         try:
             message = await self._client.messages.create(**kwargs)
         except Exception as exc:  # noqa: BLE001 - report, never crash the sweep
