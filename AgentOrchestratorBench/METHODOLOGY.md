@@ -39,8 +39,9 @@ objective without an LLM judge.
   `possible_answer/` files, and point the loader at a category pair.
 
 Categories map directly: `simple` (one call), `multiple` (pick one of several
-offered tools), `parallel` (several calls at once). Multi-turn and relevance
-categories are out of scope for v0.1 (routing is single-step here).
+offered tools), `parallel` (several calls at once), and `irrelevance` (no tool
+fits — the correct action is to call *nothing*; graded as correct iff no call is
+emitted). Multi-turn is out of scope for v0.1 (routing is single-step here).
 
 ## Grading
 

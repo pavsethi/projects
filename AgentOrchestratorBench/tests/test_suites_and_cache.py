@@ -11,11 +11,15 @@ SAMPLE = pathlib.Path(__file__).resolve().parents[1] / "data" / "bfcl_sample.jso
 def test_sample_loads_and_has_categories():
     tasks = load_jsonl(SAMPLE)
     assert len(tasks) >= 8
-    assert {t.category for t in tasks} == {"simple", "multiple", "parallel"}
-    # Every task has at least one ground-truth call and a matching tool.
+    assert {"simple", "multiple", "parallel", "irrelevance"} <= {t.category for t in tasks}
     for t in tasks:
-        assert t.ground_truth
         tool_names = {tool.name for tool in t.tools}
+        # Irrelevance tasks intentionally have no ground-truth call.
+        if t.category == "irrelevance":
+            assert t.ground_truth == []
+        else:
+            assert t.ground_truth
+        # Any ground-truth call must reference a tool the task actually offers.
         for gt in t.ground_truth:
             assert gt.name in tool_names
 

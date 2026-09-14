@@ -43,7 +43,9 @@ async def test_weak_profile_produces_failures():
     assert report.routing_accuracy < 1.0
     assert sum(v for k, v in report.failure_modes.items() if k != "none") > 0
     # Every result carries a category rollup.
-    assert {c.category for c in report.by_category} == {"simple", "multiple", "parallel"}
+    assert {"simple", "multiple", "parallel", "irrelevance"} <= {
+        c.category for c in report.by_category
+    }
 
 
 def test_cost_estimate_uses_pricing_table():

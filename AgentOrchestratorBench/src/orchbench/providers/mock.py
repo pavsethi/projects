@@ -127,6 +127,14 @@ def _simulate(task: Task, profile: QualityProfile, seed: int) -> ModelResponse:
             error=error,
         )
 
+    # Irrelevance tasks (no ground-truth call): the correct action is to call
+    # nothing; the model "fails" by making a spurious call.
+    if not correct:
+        spurious = profile.p_wrong_tool + profile.p_extra_call + profile.p_hallucinate
+        if rng.random() < spurious and task.tools:
+            return resp([PredictedCall(name=rng.choice([t.name for t in task.tools]), args={})])
+        return resp([])
+
     roll = rng.random()
     cumulative = 0.0
 

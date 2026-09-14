@@ -1,12 +1,17 @@
 name: orchbench CI
 
+# Workflows only run from the repository-root .github/workflows/ directory, so
+# this lives here (not under AgentOrchestratorBench/) and scopes itself to the
+# project with path filters + a working-directory default.
 on:
   push:
     paths:
       - "AgentOrchestratorBench/**"
+      - ".github/workflows/orchbench-ci.yml"
   pull_request:
     paths:
       - "AgentOrchestratorBench/**"
+      - ".github/workflows/orchbench-ci.yml"
 
 defaults:
   run:
