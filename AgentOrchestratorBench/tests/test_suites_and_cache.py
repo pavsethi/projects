@@ -24,6 +24,40 @@ def test_sample_loads_and_has_categories():
             assert gt.name in tool_names
 
 
+def test_normalize_json_schema_maps_python_types():
+    from orchbench.suites.bfcl import normalize_json_schema
+
+    schema = {
+        "type": "dict",
+        "properties": {
+            "amount": {"type": "float"},
+            "tags": {"type": "tuple", "items": {"type": "str"}},
+            "count": {"type": "int"},
+        },
+    }
+    out = normalize_json_schema(schema)
+    assert out["type"] == "object"
+    assert out["properties"]["amount"]["type"] == "number"
+    assert out["properties"]["tags"]["type"] == "array"
+    assert out["properties"]["tags"]["items"]["type"] == "string"
+    assert out["properties"]["count"]["type"] == "integer"
+
+
+def test_load_bfcl_native_normalizes_types(tmp_path):
+    func_file = tmp_path / "f.jsonl"
+    ans_file = tmp_path / "a.jsonl"
+    func_file.write_text(
+        '{"id": "s0", "question": [[{"role": "user", "content": "q"}]], '
+        '"function": [{"name": "f", "description": "", '
+        '"parameters": {"type": "dict", "properties": {"x": {"type": "float"}}}}]}\n'
+    )
+    ans_file.write_text('{"id": "s0", "ground_truth": [{"f": {"x": [1.0]}}]}\n')
+    tasks = load_bfcl_native(func_file, ans_file)
+    params = tasks[0].tools[0].parameters
+    assert params["type"] == "object"
+    assert params["properties"]["x"]["type"] == "number"
+
+
 def test_load_bfcl_native(tmp_path):
     func_file = tmp_path / "func.jsonl"
     ans_file = tmp_path / "ans.jsonl"

@@ -66,6 +66,36 @@ def _native_question_to_query(question: object) -> str:
     return str(question)
 
 
+# BFCL tool schemas use Python-ish type names; map them to JSON-Schema types so
+# real function-calling APIs accept the tool definitions.
+_TYPE_MAP = {
+    "float": "number",
+    "double": "number",
+    "int": "integer",
+    "str": "string",
+    "bool": "boolean",
+    "dict": "object",
+    "tuple": "array",
+    "list": "array",
+    "any": "string",
+}
+
+
+def normalize_json_schema(node: object) -> object:
+    """Recursively rewrite BFCL/Python type names into JSON-Schema type names."""
+    if isinstance(node, dict):
+        out: dict = {}
+        for key, value in node.items():
+            if key == "type" and isinstance(value, str):
+                out[key] = _TYPE_MAP.get(value.lower(), value)
+            else:
+                out[key] = normalize_json_schema(value)
+        return out
+    if isinstance(node, list):
+        return [normalize_json_schema(item) for item in node]
+    return node
+
+
 def load_bfcl_native(
     function_file: str | Path,
     answer_file: str | Path,
@@ -108,7 +138,7 @@ def load_bfcl_native(
                     ToolSpec(
                         name=f["name"],
                         description=f.get("description", ""),
-                        parameters=f.get("parameters", {}),
+                        parameters=normalize_json_schema(f.get("parameters", {})),  # type: ignore[arg-type]
                     )
                     for f in obj.get("function", [])
                 ],
