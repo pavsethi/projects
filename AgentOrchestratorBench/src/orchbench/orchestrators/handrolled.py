@@ -16,28 +16,12 @@ from __future__ import annotations
 import json
 import re
 
+from orchbench.orchestrators.prompt import build_routing_messages, tool_to_schema
 from orchbench.providers.base import LLMProvider
-from orchbench.types import LLMRequest, OrchestratorOutput, PredictedCall, Task, ToolSpec
-
-_SYSTEM_PROMPT = (
-    "You are a tool-routing engine. Given a user request and a set of tools, "
-    "call the tool(s) that fulfil the request. If none of the available tools "
-    "is appropriate for the request, do not call any tool. When structured "
-    "tool-calling is unavailable, reply with a JSON array of objects shaped "
-    '{"name": <tool name>, "arguments": {<arg>: <value>}} -- or an empty array '
-    "[] if no tool applies -- and nothing else."
-)
+from orchbench.types import LLMRequest, OrchestratorOutput, PredictedCall, Task
 
 # Matches the first JSON array or object in a block of text (fallback parsing).
 _JSON_BLOCK = re.compile(r"(\[.*\]|\{.*\})", re.DOTALL)
-
-
-def _tool_to_schema(tool: ToolSpec) -> dict:
-    return {
-        "name": tool.name,
-        "description": tool.description,
-        "parameters": tool.parameters or {"type": "object", "properties": {}},
-    }
 
 
 def _parse_text_fallback(text: str) -> list[PredictedCall]:
@@ -75,16 +59,10 @@ class HandRolledOrchestrator:
         self.max_retries = max_retries
 
     def _build_request(self, task: Task, *, nudge: bool = False) -> LLMRequest:
-        user = task.query
-        if nudge:
-            user += "\n\n(Reconsider the request and the tools; call a tool only if one applies.)"
         return LLMRequest(
             model=self.model,
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": user},
-            ],
-            tools=[_tool_to_schema(t) for t in task.tools],
+            messages=build_routing_messages(task, nudge=nudge),
+            tools=[tool_to_schema(t) for t in task.tools],
             metadata={"task_id": task.id},
         )
 

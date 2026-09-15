@@ -40,10 +40,15 @@ LangGraph and Agent Framework adapters send only the user query. So the token /
 cost spread reflects **prompt construction**, not framework overhead.
 
 That is the benchmark doing its job — surfacing a confounder before it becomes a
-false conclusion. The correct next step is to bring the adapters to prompt
-parity (same system prompt for all three, or none) and re-run; only then is a
-framework-level cost claim defensible. Until then, read the token column as
-"the harness captures per-orchestrator cost differences," not as a verdict.
+false conclusion.
+
+**Status: fixed.** Prompt parity is now enforced in code — all three
+orchestrators build identical messages from one shared module
+(`orchestrators/prompt.py`), pinned by `tests/test_prompt_parity.py`. The table
+above is from the pre-parity run; a re-run with parity is the next step and
+should collapse the token gap, leaving only genuine framework overhead. Until
+that re-run is published, read the token column as "the harness captures
+per-orchestrator cost differences," not as a verdict on the frameworks.
 
 Latency is dominated by Sonnet 5's adaptive thinking (~2–2.8 s p95), not by
 orchestration; the spread between frameworks here is within run-to-run noise at

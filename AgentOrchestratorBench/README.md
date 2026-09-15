@@ -79,14 +79,26 @@ and `--effort`.
 ## Comparing orchestrators
 
 ```bash
-pip install -e ".[langgraph]"     # make the LangGraph adapter available
-orchbench compare                 # runs every installed orchestrator, same suite
+pip install -e ".[langgraph,agentframework]"   # make both adapters available
+orchbench compare                              # every installed orchestrator, same suite
+orchbench compare --provider anthropic --model claude-sonnet-5 --out results/real.json
 ```
 
 `orchbench compare` runs each available orchestrator over one dataset and prints
-the comparison. Every orchestrator is driven over the **same provider seam**, so
-differences reflect orchestration, not a different backend. `orchbench list`
-shows which adapters are installed vs. need an extra.
+the comparison. Every orchestrator is driven over the **same provider seam** and
+sends the **same prompt** (enforced — see `METHODOLOGY.md`), so differences
+reflect orchestration, not the backend or prompt construction. `--out` saves all
+graded results; `--seeds N` runs N seeds (caching auto-disables so samples stay
+independent). `orchbench list` shows which adapters are installed.
+
+**Full BFCL run:** convert the native dataset once, then point `--data` at it:
+
+```bash
+orchbench convert-bfcl BFCL_v3_simple.json possible_answer/BFCL_v3_simple.json \
+          --out data/bfcl_simple.jsonl
+orchbench compare --provider anthropic --model claude-sonnet-5 \
+          --data data/bfcl_simple.jsonl --out results/bfcl_simple.json
+```
 
 ## Architecture
 

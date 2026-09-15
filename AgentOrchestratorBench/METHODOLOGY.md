@@ -103,9 +103,13 @@ accuracy can fail completely differently (one loses to `wrong_args`, another to
    `LLMProvider`, so differences reflect orchestration/control-flow, not a
    different backend. An adapter that quietly used a framework's built-in model
    client would invalidate the comparison — the adapters deliberately don't.
-2. **Prompt parity.** Each orchestrator constructs its own prompt (that's part of
-   what's being compared), but they see identical tools and queries. Report the
-   prompts alongside results.
+2. **Prompt parity (enforced).** All orchestrators build the *same* messages from
+   one shared module (`orchestrators/prompt.py`) — identical system prompt, user
+   query, and tool schemas — so the token/latency comparison isolates
+   orchestration overhead, not prompt construction. (The first real run exposed
+   why: before this, the hand-rolled router sent a system prompt while the
+   framework adapters sent only the query, inflating the hand-rolled token count
+   ~18%. `tests/test_prompt_parity.py` pins parity so it can't regress.)
 3. **Version pinning.** Framework behavior moves fast. Record exact versions of
    every framework and SDK with each result set.
 4. **The mock demo is synthetic.** `orchbench demo` numbers come from a seeded
