@@ -51,18 +51,25 @@ async def test_builtin_captures_provider_error(name, task):
 
 
 @pytest.mark.parametrize(
-    "factory_path",
+    "factory_path,package",
     [
-        "orchbench.orchestrators.langgraph_adapter:LangGraphOrchestrator",
-        "orchbench.orchestrators.agentframework_adapter:AgentFrameworkOrchestrator",
+        ("orchbench.orchestrators.langgraph_adapter:LangGraphOrchestrator", "langgraph"),
+        (
+            "orchbench.orchestrators.agentframework_adapter:AgentFrameworkOrchestrator",
+            "agent_framework",
+        ),
     ],
 )
-def test_optional_adapters_require_their_extra(factory_path):
+def test_optional_adapters_require_their_extra(factory_path, package):
     import importlib
+    import importlib.util
+
+    if importlib.util.find_spec(package) is not None:
+        pytest.skip(f"{package} is installed; the import-guard path isn't exercised here")
 
     module_name, cls_name = factory_path.split(":")
     cls = getattr(importlib.import_module(module_name), cls_name)
-    # Neither langgraph nor agent_framework is installed in the dev env, so the
-    # import guard must raise a clear ImportError at construction time.
+    # Without the extra installed, the import guard must raise a clear ImportError
+    # at construction time (not half-import and fail later).
     with pytest.raises(ImportError):
         cls()

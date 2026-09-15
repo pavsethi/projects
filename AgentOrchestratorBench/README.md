@@ -1,5 +1,7 @@
 # orchbench — a reproducible eval harness for agent orchestrators
 
+[![orchbench CI](https://github.com/pavsethi/projects/actions/workflows/orchbench-ci.yml/badge.svg)](https://github.com/pavsethi/projects/actions/workflows/orchbench-ci.yml)
+
 `orchbench` runs the **same task suite** through different agent orchestrators
 (a hand-rolled router, LangGraph, Microsoft Agent Framework) and measures the
 four things a real migration decision turns on:
@@ -63,7 +65,22 @@ orchbench report results/sonnet.json
 ```
 
 Point `--data` at the real [BFCL](https://gorilla.cs.berkeley.edu/leaderboard.html)
-dataset via the native loader (see `METHODOLOGY.md`) for a full run.
+dataset via the native loader (see `METHODOLOGY.md`) for a full run. Real-provider
+runs are wrapped in `RetryProvider` (transient 429/5xx) + `CachingProvider`
+(resumable, free re-runs); tune model behaviour with `--thinking/--no-thinking`
+and `--effort`.
+
+## Comparing orchestrators
+
+```bash
+pip install -e ".[langgraph]"     # make the LangGraph adapter available
+orchbench compare                 # runs every installed orchestrator, same suite
+```
+
+`orchbench compare` runs each available orchestrator over one dataset and prints
+the comparison. Every orchestrator is driven over the **same provider seam**, so
+differences reflect orchestration, not a different backend. `orchbench list`
+shows which adapters are installed vs. need an extra.
 
 ## Architecture
 
@@ -108,12 +125,13 @@ Agent Framework adapters are worked examples.
 
 ## Status
 
-Core harness, grader, taxonomy, metrics, mock provider and the hand-rolled
-orchestrator are complete and tested. The Anthropic provider and LangGraph
-adapter are working skeletons behind optional extras; the Agent Framework
-adapter's `route()` is stubbed to be wired against a pinned SDK beta (its
-result-extraction seam is isolated for exactly that). See `METHODOLOGY.md` for
-grading details, fairness caveats, and how to run against real BFCL.
+Core harness, grader, taxonomy, metrics, mock provider, and the hand-rolled and
+**LangGraph** orchestrators are complete and tested (LangGraph verified
+end-to-end over the shared provider — `pip install -e '.[langgraph]'`). The
+Anthropic provider is complete behind its extra. The Agent Framework adapter's
+`route()` is stubbed to be wired against a pinned SDK beta (its result-extraction
+seam is isolated for exactly that). See `METHODOLOGY.md` for grading details,
+fairness caveats, and how to run against real BFCL.
 
 ## License
 

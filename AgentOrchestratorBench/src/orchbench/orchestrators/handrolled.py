@@ -21,10 +21,11 @@ from orchbench.types import LLMRequest, OrchestratorOutput, PredictedCall, Task,
 
 _SYSTEM_PROMPT = (
     "You are a tool-routing engine. Given a user request and a set of tools, "
-    "select the tool call(s) that fulfil the request. Respond ONLY by calling "
-    "tools. If no structured tool-calling is available, reply with a JSON array "
-    'of objects shaped {"name": <tool name>, "arguments": {<arg>: <value>}} and '
-    "nothing else."
+    "call the tool(s) that fulfil the request. If none of the available tools "
+    "is appropriate for the request, do not call any tool. When structured "
+    "tool-calling is unavailable, reply with a JSON array of objects shaped "
+    '{"name": <tool name>, "arguments": {<arg>: <value>}} -- or an empty array '
+    "[] if no tool applies -- and nothing else."
 )
 
 # Matches the first JSON array or object in a block of text (fallback parsing).
@@ -64,7 +65,11 @@ def _parse_text_fallback(text: str) -> list[PredictedCall]:
 class HandRolledOrchestrator:
     """A minimal, dependency-free tool router with one retry on empty output."""
 
-    def __init__(self, model: str = "mock-model", max_retries: int = 1) -> None:
+    def __init__(self, model: str = "mock-model", max_retries: int = 0) -> None:
+        # Default 0: one call per task is the honest measurement. A retry that
+        # re-prompts an empty response would force a tool call and destroy the
+        # irrelevance signal (the model must be free to abstain), so retries are
+        # opt-in and the nudge below never demands a call.
         self.name = "handrolled"
         self.model = model
         self.max_retries = max_retries
@@ -72,7 +77,7 @@ class HandRolledOrchestrator:
     def _build_request(self, task: Task, *, nudge: bool = False) -> LLMRequest:
         user = task.query
         if nudge:
-            user += "\n\n(Reminder: you must call at least one tool.)"
+            user += "\n\n(Reconsider the request and the tools; call a tool only if one applies.)"
         return LLMRequest(
             model=self.model,
             messages=[

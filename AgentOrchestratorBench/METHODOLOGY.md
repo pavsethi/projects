@@ -106,6 +106,13 @@ accuracy can fail completely differently (one loses to `wrong_args`, another to
 4. **The mock demo is synthetic.** `orchbench demo` numbers come from a seeded
    error-injection model, not a real LLM. They exist to exercise the pipeline.
    Only `--provider anthropic` (or another real provider) produces real numbers.
+5. **An abstention-forbidding prompt makes `irrelevance` unmeasurable.** The
+   first real Sonnet-5 run scored 0% on `irrelevance` — not a model failure but a
+   harness bug: the router's system prompt said "respond ONLY by calling tools",
+   so it could never abstain. The prompt must *permit* not calling a tool, and a
+   retry-on-empty must not re-prompt for a call (it would force one). An
+   orchestrator that cannot abstain should simply not be scored on `irrelevance`
+   rather than be recorded as 0%.
 
 ## Reproducing a real run
 

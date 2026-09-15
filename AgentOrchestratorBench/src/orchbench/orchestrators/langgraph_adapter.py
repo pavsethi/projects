@@ -15,8 +15,23 @@ default (mock) test path because it pulls heavy dependencies.
 
 from __future__ import annotations
 
+from typing import TypedDict
+
 from orchbench.providers.base import LLMProvider
-from orchbench.types import LLMRequest, OrchestratorOutput, PredictedCall, Task, ToolSpec
+from orchbench.types import (
+    LLMRequest,
+    ModelResponse,
+    OrchestratorOutput,
+    PredictedCall,
+    Task,
+    ToolSpec,
+)
+
+
+class _State(TypedDict, total=False):
+    """LangGraph state schema: a node writes the provider response into it."""
+
+    response: ModelResponse
 
 
 def _require_langgraph() -> None:
@@ -42,16 +57,11 @@ class LangGraphOrchestrator:
             "parameters": tool.parameters or {"type": "object", "properties": {}},
         }
 
-    async def route(
-        self, task: Task, provider: LLMProvider
-    ) -> OrchestratorOutput:  # pragma: no cover
-        # A one-node graph: the node calls the provider and emits tool calls.
-        # Kept inline (rather than a module-level graph) so each task run is
-        # independent and the token/latency accounting stays per-task.
+    async def route(self, task: Task, provider: LLMProvider) -> OrchestratorOutput:
+        # A one-node graph: the node calls the provider and returns a state
+        # update. Kept inline (rather than a module-level graph) so each task run
+        # is independent and the token/latency accounting stays per-task.
         from langgraph.graph import END, START, StateGraph
-
-        class _State(dict):
-            pass
 
         request = LLMRequest(
             model=self.model,
@@ -61,9 +71,8 @@ class LangGraphOrchestrator:
         )
 
         async def route_node(state: _State) -> _State:
-            response = await provider.complete(request)
-            state["response"] = response
-            return state
+            # Return a state *update* (LangGraph merges it); do not mutate.
+            return {"response": await provider.complete(request)}
 
         graph = StateGraph(_State)
         graph.add_node("route", route_node)

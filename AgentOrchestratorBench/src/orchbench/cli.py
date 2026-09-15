@@ -5,10 +5,12 @@ Commands
 * ``orchbench demo``   -- run the built-in orchestrator over the sample suite
   across three simulated model tiers, with no API keys. The fastest way to see
   the whole pipeline (metrics + variance + failure taxonomy) working.
-* ``orchbench run``    -- run one orchestrator/provider over a dataset, write
+* ``orchbench run``     -- run one orchestrator/provider over a dataset, write
   graded results to JSON.
-* ``orchbench report`` -- aggregate one or more results files into a comparison.
-* ``orchbench list``   -- show available orchestrators, providers and suites.
+* ``orchbench compare`` -- run *every available* orchestrator over one dataset
+  and print the comparison (the multi-orchestrator money shot).
+* ``orchbench report``  -- aggregate one or more results files into a comparison.
+* ``orchbench list``    -- show available orchestrators, providers and suites.
 """
 
 from __future__ import annotations
@@ -21,10 +23,16 @@ from statistics import mean, pstdev
 import typer
 
 from orchbench.metrics import SuiteReport, aggregate
-from orchbench.orchestrators import BUILTIN
+from orchbench.orchestrators import (
+    ALL_NAMES,
+    available_orchestrators,
+    get_orchestrator,
+)
 from orchbench.orchestrators.handrolled import HandRolledOrchestrator
 from orchbench.providers.base import LLMProvider
+from orchbench.providers.cache import CachingProvider
 from orchbench.providers.mock import PROFILES, MockProvider, build_fixtures
+from orchbench.providers.retry import RetryProvider
 from orchbench.runner import Runner
 from orchbench.suites.bfcl import load_jsonl
 from orchbench.types import RunResult
@@ -119,6 +127,38 @@ def demo(
     _print_comparison(comparison)
 
 
+def _build_provider(
+    provider: str,
+    *,
+    tasks: list,
+    profile: str,
+    seed: int,
+    model: str,
+    cache_dir: Path | None,
+    retries: int,
+    thinking: bool,
+    effort: str | None,
+) -> LLMProvider:
+    """Construct the provider for one seed.
+
+    Real providers are wrapped ``CachingProvider(RetryProvider(real))`` so a
+    sweep is resumable and survives transient 429/5xx. The mock provider is left
+    bare: its per-seed fixtures share a request signature, so caching would
+    collapse distinct seeds onto one cached response.
+    """
+    if provider == "mock":
+        return MockProvider(build_fixtures(tasks, profile, seed=seed))
+    if provider == "anthropic":
+        from orchbench.providers.anthropic import AnthropicProvider
+
+        base: LLMProvider = AnthropicProvider(model=model, thinking=thinking, effort=effort)
+        base = RetryProvider(base, max_retries=retries)
+        if cache_dir is not None:
+            base = CachingProvider(base, cache_dir)
+        return base
+    raise typer.BadParameter(f"unknown provider {provider!r}")
+
+
 @app.command()
 def run(
     data: Path = typer.Option(_SAMPLE, help="Task dataset (JSONL)."),
@@ -126,38 +166,50 @@ def run(
     provider: str = typer.Option("mock", help="Provider: 'mock' or 'anthropic'."),
     profile: str = typer.Option("balanced", help="Mock quality profile: strong|balanced|weak."),
     model: str = typer.Option("mock-model", help="Model id (recorded and priced)."),
-    seeds: int = typer.Option(1, help="Number of seeds to run (mock provider)."),
+    seeds: int = typer.Option(1, help="Number of seeds to run."),
     concurrency: int = typer.Option(8, help="Max concurrent tasks."),
+    cache_dir: Path = typer.Option(
+        Path(".orchbench_cache"), help="Cache dir for real-provider responses."
+    ),
+    no_cache: bool = typer.Option(False, help="Disable the response cache."),
+    retries: int = typer.Option(3, help="Transient-error retries (real providers)."),
+    thinking: bool = typer.Option(True, help="Adaptive thinking (real providers)."),
+    effort: str | None = typer.Option(None, help="Effort: low|medium|high|xhigh|max."),
     out: Path | None = typer.Option(None, help="Write graded results JSON here."),
 ) -> None:
     """Run one orchestrator/provider over a dataset and grade it."""
     tasks = load_jsonl(data)
-    if orchestrator not in BUILTIN:
-        raise typer.BadParameter(f"unknown orchestrator {orchestrator!r}; try: {list(BUILTIN)}")
-    if profile not in PROFILES:
+    if orchestrator not in ALL_NAMES:
+        raise typer.BadParameter(f"unknown orchestrator {orchestrator!r}; try: {ALL_NAMES}")
+    if provider == "mock" and profile not in PROFILES:
         raise typer.BadParameter(f"unknown profile {profile!r}; try: {list(PROFILES)}")
 
-    orch = BUILTIN[orchestrator](model=model)
+    try:
+        orch = get_orchestrator(orchestrator, model=model)
+    except ImportError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     runner = Runner(concurrency=concurrency)
+    cache = None if no_cache else cache_dir
 
     async def go() -> list[RunResult]:
         results: list[RunResult] = []
         for seed in range(seeds):
-            prov: LLMProvider
-            if provider == "mock":
-                prov = MockProvider(build_fixtures(tasks, profile, seed=seed))
-            elif provider == "anthropic":
-                from orchbench.providers.anthropic import AnthropicProvider
-
-                prov = AnthropicProvider(model=model)
-            else:
-                raise typer.BadParameter(f"unknown provider {provider!r}")
+            prov = _build_provider(
+                provider,
+                tasks=tasks,
+                profile=profile,
+                seed=seed,
+                model=model,
+                cache_dir=cache,
+                retries=retries,
+                thinking=thinking,
+                effort=effort,
+            )
             results.extend(await runner.run_suite(orch, tasks, prov, seed=seed))
         return results
 
     results = asyncio.run(go())
-    report = aggregate(results)
-    _print_report(report)
+    _print_report(aggregate(results))
 
     if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -167,6 +219,8 @@ def run(
                 "provider": provider,
                 "model": model,
                 "profile": profile if provider == "mock" else None,
+                "thinking": thinking if provider == "anthropic" else None,
+                "effort": effort if provider == "anthropic" else None,
                 "data": str(data),
                 "seeds": seeds,
             },
@@ -174,6 +228,44 @@ def run(
         }
         out.write_text(json.dumps(payload, indent=2))
         typer.echo(f"\nWrote {len(results)} results to {out}")
+
+
+@app.command()
+def compare(
+    data: Path = typer.Option(_SAMPLE, help="Task dataset (JSONL)."),
+    provider: str = typer.Option("mock", help="Provider: 'mock' or 'anthropic'."),
+    profile: str = typer.Option("balanced", help="Mock quality profile (mock provider)."),
+    model: str = typer.Option("mock-model", help="Model id (recorded and priced)."),
+    concurrency: int = typer.Option(8, help="Max concurrent tasks."),
+) -> None:
+    """Run every *available* orchestrator over one dataset and compare them."""
+    tasks = load_jsonl(data)
+    names = available_orchestrators()
+    typer.echo(f"Comparing orchestrators: {', '.join(names)}  (provider={provider})")
+    runner = Runner(concurrency=concurrency)
+    comparison: list[tuple[str, SuiteReport]] = []
+
+    async def go() -> None:
+        for name in names:
+            orch = get_orchestrator(name, model=model)
+            prov = _build_provider(
+                provider,
+                tasks=tasks,
+                profile=profile,
+                seed=0,
+                model=model,
+                cache_dir=None,
+                retries=3,
+                thinking=True,
+                effort=None,
+            )
+            results = await runner.run_suite(orch, tasks, prov, seed=0)
+            report = aggregate(results)
+            _print_report(report, label=f"{name}/{model}")
+            comparison.append((name, report))
+
+    asyncio.run(go())
+    _print_comparison(comparison)
 
 
 @app.command()
@@ -194,8 +286,9 @@ def report(files: list[Path]) -> None:
 @app.command("list")
 def list_() -> None:
     """List available orchestrators, providers and suites."""
-    typer.echo("orchestrators (builtin): " + ", ".join(BUILTIN))
-    typer.echo("orchestrators (optional): langgraph, agentframework")
+    installed = set(available_orchestrators())
+    rows = [f"{n} (installed)" if n in installed else f"{n} (needs extra)" for n in ALL_NAMES]
+    typer.echo("orchestrators: " + ", ".join(rows))
     typer.echo("providers: mock (default), anthropic")
     typer.echo("mock profiles: " + ", ".join(PROFILES))
     typer.echo("suites: bfcl (portable JSONL + native BFCL loader)")
