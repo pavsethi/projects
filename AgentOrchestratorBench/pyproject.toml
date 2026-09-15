@@ -32,7 +32,7 @@ Homepage = "https://github.com/pavsethi/projects/tree/main/AgentOrchestratorBenc
 anthropic = ["anthropic>=0.39"]
 # Framework adapters, kept optional so the core harness installs with no heavy deps.
 langgraph = ["langgraph>=0.2", "langchain-core>=0.3"]
-agentframework = ["agent-framework>=1.0.0b1"]
+agentframework = ["agent-framework>=1.0"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
