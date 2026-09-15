@@ -125,13 +125,13 @@ Agent Framework adapters are worked examples.
 
 ## Status
 
-Core harness, grader, taxonomy, metrics, mock provider, and the hand-rolled and
-**LangGraph** orchestrators are complete and tested (LangGraph verified
-end-to-end over the shared provider — `pip install -e '.[langgraph]'`). The
-Anthropic provider is complete behind its extra. The Agent Framework adapter's
-`route()` is stubbed to be wired against a pinned SDK beta (its result-extraction
-seam is isolated for exactly that). See `METHODOLOGY.md` for grading details,
-fairness caveats, and how to run against real BFCL.
+All three orchestrators are implemented and tested end-to-end over the shared
+provider: **hand-rolled**, **LangGraph** (`.[langgraph]`), and **Microsoft Agent
+Framework** (`.[agentframework]`). Each framework adapter drives the framework's
+own request/response machinery over our `LLMProvider`, so a comparison isolates
+orchestration rather than the backend. The Anthropic provider is complete behind
+its extra. See `METHODOLOGY.md` for grading details, fairness caveats, and how to
+run against real BFCL.
 
 ## License
 
