@@ -19,6 +19,7 @@ BFCL categories map to our ``category`` field: ``simple`` (one call), ``multiple
 
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 
@@ -66,6 +67,86 @@ def _native_question_to_query(question: object) -> str:
     return str(question)
 
 
+# BFCL tool schemas use Python-ish type names; map them to JSON-Schema types so
+# real function-calling APIs accept the tool definitions.
+_TYPE_MAP = {
+    "float": "number",
+    "double": "number",
+    "int": "integer",
+    "str": "string",
+    "bool": "boolean",
+    "dict": "object",
+    "tuple": "array",
+    "list": "array",
+    "any": "string",
+}
+
+
+def normalize_json_schema(node: object) -> object:
+    """Recursively rewrite BFCL/Python type names into JSON-Schema type names."""
+    if isinstance(node, dict):
+        out: dict = {}
+        for key, value in node.items():
+            if key == "type" and isinstance(value, str):
+                out[key] = _TYPE_MAP.get(value.lower(), value)
+            else:
+                out[key] = normalize_json_schema(value)
+        return out
+    if isinstance(node, list):
+        return [normalize_json_schema(item) for item in node]
+    return node
+
+
+def _parse_call_string(text: str) -> GroundTruthCall | None:
+    """Parse an executable/live-style ground truth like ``func(a=1, b=2)``.
+
+    The AST/`possible_answer` categories give ground truth as dicts; the ``exec_``
+    and ``live_`` categories give it as a call *string*. Extract the function name
+    (always) and keyword args (best-effort), each wrapped as a one-element
+    acceptable-value list so grading is uniform. Positional args can't be mapped
+    to parameter names without the schema and are skipped (name-level routing
+    still grades correctly).
+    """
+    try:
+        node = ast.parse(text.strip(), mode="eval").body
+    except SyntaxError:
+        return None
+    if not isinstance(node, ast.Call):
+        return None
+    func = node.func
+    if isinstance(func, ast.Name):
+        name = func.id
+    elif isinstance(func, ast.Attribute):
+        name = func.attr
+    else:
+        return None
+    args: dict[str, list] = {}
+    for kw in node.keywords:
+        if kw.arg is None:
+            continue
+        try:
+            args[kw.arg] = [ast.literal_eval(kw.value)]
+        except (ValueError, SyntaxError):
+            continue
+    return GroundTruthCall(name=name, args=args)
+
+
+def _parse_ground_truth(call: object) -> list[GroundTruthCall]:
+    """Turn one BFCL ground-truth entry (dict or call-string) into calls."""
+    if isinstance(call, dict):
+        out: list[GroundTruthCall] = []
+        for func_name, args in call.items():
+            # AST args are already {param: [acceptable values]}; wrap a stray
+            # scalar just in case.
+            norm = {p: (v if isinstance(v, list) else [v]) for p, v in (args or {}).items()}
+            out.append(GroundTruthCall(name=func_name, args=norm))
+        return out
+    if isinstance(call, str):
+        parsed = _parse_call_string(call)
+        return [parsed] if parsed else []
+    return []
+
+
 def load_bfcl_native(
     function_file: str | Path,
     answer_file: str | Path,
@@ -95,9 +176,7 @@ def load_bfcl_native(
         obj = json.loads(line)
         ground_truth: list[GroundTruthCall] = []
         for call in answers.get(obj["id"], []):
-            # Native shape: {func_name: {param: [acceptable values]}}
-            for func_name, args in call.items():
-                ground_truth.append(GroundTruthCall(name=func_name, args=args))
+            ground_truth.extend(_parse_ground_truth(call))
         tasks.append(
             Task(
                 id=obj["id"],
@@ -108,7 +187,7 @@ def load_bfcl_native(
                     ToolSpec(
                         name=f["name"],
                         description=f.get("description", ""),
-                        parameters=f.get("parameters", {}),
+                        parameters=normalize_json_schema(f.get("parameters", {})),  # type: ignore[arg-type]
                     )
                     for f in obj.get("function", [])
                 ],
