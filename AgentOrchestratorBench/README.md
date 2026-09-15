@@ -24,6 +24,12 @@ harness, not the point of it.
 > I wish I'd had when weighing one orchestration approach against another —
 > rebuilt in Python, framework-agnostic, and honest about its own limits.
 
+**First real run** (Sonnet 5, all three orchestrators): routing is **identical**
+(100% / 94.7% exact) — as the shared-provider design predicts — and the
+differentiation shows up in **tokens and latency**. The harness also caught a
+prompt-parity confounder in that spread. Numbers, interpretation, and the honest
+caveats: **[`RESULTS.md`](RESULTS.md)**.
+
 ## Runs in 30 seconds, no API keys
 
 ```bash
