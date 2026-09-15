@@ -58,6 +58,24 @@ def test_load_bfcl_native_normalizes_types(tmp_path):
     assert params["properties"]["x"]["type"] == "number"
 
 
+def test_load_bfcl_native_call_string_ground_truth(tmp_path):
+    # exec_/live_ categories give ground truth as call strings, not dicts.
+    func_file = tmp_path / "f.jsonl"
+    ans_file = tmp_path / "a.jsonl"
+    func_file.write_text(
+        '{"id": "e0", "question": [[{"role": "user", "content": "q"}]], '
+        '"function": [{"name": "calc", "description": "", '
+        '"parameters": {"type": "dict", "properties": {"n": {"type": "integer"}, '
+        '"p": {"type": "float"}}}}]}\n'
+    )
+    ans_file.write_text('{"id": "e0", "ground_truth": ["calc(n=20, p=0.6)"]}\n')
+    tasks = load_bfcl_native(func_file, ans_file)
+    gt = tasks[0].ground_truth
+    assert len(gt) == 1
+    assert gt[0].name == "calc"
+    assert gt[0].args == {"n": [20], "p": [0.6]}
+
+
 def test_load_bfcl_native(tmp_path):
     func_file = tmp_path / "func.jsonl"
     ans_file = tmp_path / "ans.jsonl"
