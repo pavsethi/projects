@@ -34,7 +34,7 @@ from orchbench.providers.cache import CachingProvider
 from orchbench.providers.mock import PROFILES, MockProvider, build_fixtures
 from orchbench.providers.retry import RetryProvider
 from orchbench.runner import Runner
-from orchbench.suites.bfcl import load_jsonl
+from orchbench.suites.bfcl import load_bfcl_native, load_jsonl
 from orchbench.types import RunResult
 
 app = typer.Typer(add_completion=False, help="A reproducible eval harness for agent orchestrators.")
@@ -189,7 +189,11 @@ def run(
     except ImportError as exc:
         raise typer.BadParameter(str(exc)) from exc
     runner = Runner(concurrency=concurrency)
-    cache = None if no_cache else cache_dir
+    # Caching collapses distinct seeds onto one cached response (the request is
+    # identical across seeds), so disable it for multi-seed variance runs.
+    cache = None if (no_cache or seeds > 1) else cache_dir
+    if seeds > 1 and not no_cache and provider != "mock":
+        typer.echo("note: caching disabled for multi-seed run (independent samples).")
 
     async def go() -> list[RunResult]:
         results: list[RunResult] = []
@@ -236,36 +240,66 @@ def compare(
     provider: str = typer.Option("mock", help="Provider: 'mock' or 'anthropic'."),
     profile: str = typer.Option("balanced", help="Mock quality profile (mock provider)."),
     model: str = typer.Option("mock-model", help="Model id (recorded and priced)."),
+    seeds: int = typer.Option(1, help="Seeds per orchestrator."),
     concurrency: int = typer.Option(8, help="Max concurrent tasks."),
+    thinking: bool = typer.Option(True, help="Adaptive thinking (real providers)."),
+    effort: str | None = typer.Option(None, help="Effort: low|medium|high|xhigh|max."),
+    cache_dir: Path = typer.Option(Path(".orchbench_cache"), help="Cache dir (real providers)."),
+    no_cache: bool = typer.Option(False, help="Disable the response cache."),
+    out: Path | None = typer.Option(None, help="Write all graded results JSON here."),
 ) -> None:
     """Run every *available* orchestrator over one dataset and compare them."""
     tasks = load_jsonl(data)
     names = available_orchestrators()
     typer.echo(f"Comparing orchestrators: {', '.join(names)}  (provider={provider})")
     runner = Runner(concurrency=concurrency)
+    cache = None if (no_cache or seeds > 1) else cache_dir
     comparison: list[tuple[str, SuiteReport]] = []
+    all_results: list[RunResult] = []
 
     async def go() -> None:
         for name in names:
             orch = get_orchestrator(name, model=model)
-            prov = _build_provider(
-                provider,
-                tasks=tasks,
-                profile=profile,
-                seed=0,
-                model=model,
-                cache_dir=None,
-                retries=3,
-                thinking=True,
-                effort=None,
-            )
-            results = await runner.run_suite(orch, tasks, prov, seed=0)
-            report = aggregate(results)
+            per_orch: list[RunResult] = []
+            for seed in range(seeds):
+                prov = _build_provider(
+                    provider,
+                    tasks=tasks,
+                    profile=profile,
+                    seed=seed,
+                    model=model,
+                    cache_dir=cache,
+                    retries=3,
+                    thinking=thinking,
+                    effort=effort,
+                )
+                per_orch.extend(await runner.run_suite(orch, tasks, prov, seed=seed))
+            report = aggregate(per_orch)
             _print_report(report, label=f"{name}/{model}")
             comparison.append((name, report))
+            all_results.extend(per_orch)
 
     asyncio.run(go())
     _print_comparison(comparison)
+
+    if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "meta": {
+                "command": "compare",
+                "provider": provider,
+                "model": model,
+                "orchestrators": names,
+                "profile": profile if provider == "mock" else None,
+                "thinking": thinking if provider == "anthropic" else None,
+                "effort": effort if provider == "anthropic" else None,
+                "data": str(data),
+                "seeds": seeds,
+            },
+            "results": [r.model_dump() for r in all_results],
+        }
+        out.write_text(json.dumps(payload, indent=2))
+        typer.echo(f"\nWrote {len(all_results)} results to {out}")
 
 
 @app.command()
@@ -281,6 +315,20 @@ def report(files: list[Path]) -> None:
         comparison.append((label, rep))
     if len(comparison) > 1:
         _print_comparison(comparison)
+
+
+@app.command("convert-bfcl")
+def convert_bfcl(
+    function_file: Path = typer.Argument(..., help="BFCL function file (questions + tools)."),
+    answer_file: Path = typer.Argument(..., help="BFCL possible_answer file (ground truth)."),
+    out: Path = typer.Option(..., help="Write portable JSONL here."),
+    category: str = typer.Option("simple", help="Category label for these tasks."),
+) -> None:
+    """Convert native BFCL files into orchbench's portable JSONL format."""
+    tasks = load_bfcl_native(function_file, answer_file, category=category)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("".join(t.model_dump_json() + "\n" for t in tasks))
+    typer.echo(f"Wrote {len(tasks)} tasks to {out}  (then: orchbench compare --data {out} ...)")
 
 
 @app.command("list")

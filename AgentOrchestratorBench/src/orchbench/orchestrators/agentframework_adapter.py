@@ -22,8 +22,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from orchbench.orchestrators.prompt import build_routing_messages, tool_to_schema
 from orchbench.providers.base import LLMProvider
-from orchbench.types import LLMRequest, OrchestratorOutput, PredictedCall, Task, ToolSpec
+from orchbench.types import LLMRequest, OrchestratorOutput, PredictedCall, Task
 
 
 def _require_agent_framework() -> None:
@@ -43,13 +44,14 @@ class AgentFrameworkOrchestrator:
         self.name = "agentframework"
         self.model = model
 
-    @staticmethod
-    def _tool_schema(tool: ToolSpec) -> dict:
-        return {
-            "name": tool.name,
-            "description": tool.description,
-            "parameters": tool.parameters or {"type": "object", "properties": {}},
-        }
+    def _build_request(self, task: Task) -> LLMRequest:
+        # Identical prompt to every other orchestrator (prompt parity).
+        return LLMRequest(
+            model=self.model,
+            messages=build_routing_messages(task),
+            tools=[tool_to_schema(t) for t in task.tools],
+            metadata={"task_id": task.id},
+        )
 
     @staticmethod
     def _extract_calls(response: Any) -> list[PredictedCall]:
@@ -77,12 +79,7 @@ class AgentFrameworkOrchestrator:
     async def route(self, task: Task, provider: LLMProvider) -> OrchestratorOutput:
         from agent_framework import BaseChatClient, ChatResponse, Content, Message
 
-        request = LLMRequest(
-            model=self.model,
-            messages=[{"role": "user", "content": task.query}],
-            tools=[self._tool_schema(t) for t in task.tools],
-            metadata={"task_id": task.id},
-        )
+        request = self._build_request(task)
         # The client stashes our raw ModelResponse here so route() can read the
         # token/latency/error accounting the framework's types don't carry.
         holder: dict[str, Any] = {}

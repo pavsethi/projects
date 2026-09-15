@@ -24,6 +24,12 @@ harness, not the point of it.
 > I wish I'd had when weighing one orchestration approach against another —
 > rebuilt in Python, framework-agnostic, and honest about its own limits.
 
+**First real run** (Sonnet 5, all three orchestrators): routing is **identical**
+(100% / 94.7% exact) — as the shared-provider design predicts — and the
+differentiation shows up in **tokens and latency**. The harness also caught a
+prompt-parity confounder in that spread. Numbers, interpretation, and the honest
+caveats: **[`RESULTS.md`](RESULTS.md)**.
+
 ## Runs in 30 seconds, no API keys
 
 ```bash
@@ -73,14 +79,26 @@ and `--effort`.
 ## Comparing orchestrators
 
 ```bash
-pip install -e ".[langgraph]"     # make the LangGraph adapter available
-orchbench compare                 # runs every installed orchestrator, same suite
+pip install -e ".[langgraph,agentframework]"   # make both adapters available
+orchbench compare                              # every installed orchestrator, same suite
+orchbench compare --provider anthropic --model claude-sonnet-5 --out results/real.json
 ```
 
 `orchbench compare` runs each available orchestrator over one dataset and prints
-the comparison. Every orchestrator is driven over the **same provider seam**, so
-differences reflect orchestration, not a different backend. `orchbench list`
-shows which adapters are installed vs. need an extra.
+the comparison. Every orchestrator is driven over the **same provider seam** and
+sends the **same prompt** (enforced — see `METHODOLOGY.md`), so differences
+reflect orchestration, not the backend or prompt construction. `--out` saves all
+graded results; `--seeds N` runs N seeds (caching auto-disables so samples stay
+independent). `orchbench list` shows which adapters are installed.
+
+**Full BFCL run:** convert the native dataset once, then point `--data` at it:
+
+```bash
+orchbench convert-bfcl BFCL_v3_simple.json possible_answer/BFCL_v3_simple.json \
+          --out data/bfcl_simple.jsonl
+orchbench compare --provider anthropic --model claude-sonnet-5 \
+          --data data/bfcl_simple.jsonl --out results/bfcl_simple.json
+```
 
 ## Architecture
 

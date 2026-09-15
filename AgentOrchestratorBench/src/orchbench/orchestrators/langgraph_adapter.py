@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from typing import TypedDict
 
+from orchbench.orchestrators.prompt import build_routing_messages, tool_to_schema
 from orchbench.providers.base import LLMProvider
 from orchbench.types import (
     LLMRequest,
@@ -24,7 +25,6 @@ from orchbench.types import (
     OrchestratorOutput,
     PredictedCall,
     Task,
-    ToolSpec,
 )
 
 
@@ -49,13 +49,14 @@ class LangGraphOrchestrator:
         self.name = "langgraph"
         self.model = model
 
-    @staticmethod
-    def _tool_schema(tool: ToolSpec) -> dict:
-        return {
-            "name": tool.name,
-            "description": tool.description,
-            "parameters": tool.parameters or {"type": "object", "properties": {}},
-        }
+    def _build_request(self, task: Task) -> LLMRequest:
+        # Identical prompt to every other orchestrator (prompt parity).
+        return LLMRequest(
+            model=self.model,
+            messages=build_routing_messages(task),
+            tools=[tool_to_schema(t) for t in task.tools],
+            metadata={"task_id": task.id},
+        )
 
     async def route(self, task: Task, provider: LLMProvider) -> OrchestratorOutput:
         # A one-node graph: the node calls the provider and returns a state
@@ -63,12 +64,7 @@ class LangGraphOrchestrator:
         # is independent and the token/latency accounting stays per-task.
         from langgraph.graph import END, START, StateGraph
 
-        request = LLMRequest(
-            model=self.model,
-            messages=[{"role": "user", "content": task.query}],
-            tools=[self._tool_schema(t) for t in task.tools],
-            metadata={"task_id": task.id},
-        )
+        request = self._build_request(task)
 
         async def route_node(state: _State) -> _State:
             # Return a state *update* (LangGraph merges it); do not mutate.
