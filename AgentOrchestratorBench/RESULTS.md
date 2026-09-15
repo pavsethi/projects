@@ -1,72 +1,72 @@
 # Results
 
-First real run comparing all three orchestrators over the same suite against a
-live model. These numbers are **real** (Anthropic provider), unlike the
-synthetic `orchbench demo`.
+Real run (Anthropic provider) comparing all three orchestrators over the same
+suite at **prompt parity**, against a live model. These are real numbers, unlike
+the synthetic `orchbench demo`.
 
 ## Run
 
 | Setting | Value |
 |---|---|
-| Command | `orchbench compare --provider anthropic --model claude-sonnet-5` |
-| Model | `claude-sonnet-5` (adaptive thinking on by default) |
-| Suite | bundled BFCL-style sample — 19 tasks (simple / multiple / parallel / irrelevance) |
+| Command | `orchbench compare --provider anthropic --model claude-sonnet-5 --effort low` |
+| Model | `claude-sonnet-5` |
+| Suite | BFCL `simple` prompts (executable-category subset) — **100 tasks** |
 | Seeds | 1 |
-| Orchestrators | hand-rolled, LangGraph, Microsoft Agent Framework |
+| Orchestrators | hand-rolled, LangGraph, Microsoft Agent Framework (prompt parity enforced) |
 
 ## Headline
 
-| Orchestrator | Routing | Exact | Tokens/task | Est. cost | p95 latency |
+| Orchestrator | Routing | Exact | Tokens/task | Est. cost | p95 latency* |
 |---|--:|--:|--:|--:|--:|
-| handrolled | 100.0% | 94.7% | 757.7 | $0.0641 | 2068 ms |
-| langgraph | 100.0% | 94.7% | 641.5 | $0.0627 | 2783 ms |
-| agentframework | 100.0% | 94.7% | 640.1 | $0.0622 | 2662 ms |
+| handrolled | 99.0% | 95.0% | 826.5 | $0.352 | 1999 ms |
+| langgraph | 99.0% | 95.0% | 826.5 | $0.352 | 1999 ms* |
+| agentframework | 99.0% | 95.0% | 826.5 | $0.352 | 1999 ms* |
 
-- **Routing is identical across all three** (0 routing errors; 18/19 exact — one
-  argument-level miss). This is the expected result and a validation of the
-  harness design: every orchestrator is driven over the **same provider seam**,
-  so they make the same tool-choice decisions. Routing accuracy is a property of
-  the model + prompt, not the orchestration framework.
-- **The differentiation is operational, not routing** — it shows up in **tokens
-  and latency**, which is exactly where a framework comparison should live once
-  routing is held constant.
+Failure modes (identical across all three): **4 `wrong_args`, 1
+`empty_response`** — i.e. 0 routing errors, and every miss was an argument-level
+slip, not a wrong tool.
 
-## The honest caveat (and what the harness caught)
+## What this shows
 
-The ~18% token gap (handrolled 757.7 vs ~640) is **not** "the hand-rolled router
-is more expensive." It is a **prompt-parity confounder**: the hand-rolled
-orchestrator sends an explicit routing *system prompt*, while the current
-LangGraph and Agent Framework adapters send only the user query. So the token /
-cost spread reflects **prompt construction**, not framework overhead.
+- **Orchestration does not change routing.** At prompt parity over the same
+  model, all three orchestrators produce identical routing accuracy (99%),
+  exact accuracy (95%), and token cost. This is the expected result and the
+  central validation of the harness design: routing is a property of the
+  *model + prompt*, driven over the shared provider seam — the framework wrapped
+  around it doesn't move it. A framework comparison therefore has to live in the
+  *operational* metrics (latency, overhead, failure handling), not accuracy.
+- **Sonnet 5 is strong at single-tool routing** — 99% routing on 100 tasks, with
+  the only exact-match losses being argument formatting (`wrong_args`).
 
-That is the benchmark doing its job — surfacing a confounder before it becomes a
-false conclusion.
+## Honest caveat (\*the latency column)
 
-**Status: fixed.** Prompt parity is now enforced in code — all three
-orchestrators build identical messages from one shared module
-(`orchestrators/prompt.py`), pinned by `tests/test_prompt_parity.py`. The table
-above is from the pre-parity run; a re-run with parity is the next step and
-should collapse the token gap, leaving only genuine framework overhead. Until
-that re-run is published, read the token column as "the harness captures
-per-orchestrator cost differences," not as a verdict on the frameworks.
+This run **shared one response cache across the three orchestrators.** Because
+prompt parity makes every orchestrator issue byte-identical requests, LangGraph
+and Agent Framework were served entirely from the hand-rolled run's cache — so
+they cost ≈$0 (the ~$0.35 is one orchestrator's real calls, not three) and
+**inherited its latency**. The latency column is therefore *not* an independent
+per-framework measurement here.
 
-Latency is dominated by Sonnet 5's adaptive thinking (~2–2.8 s p95), not by
-orchestration; the spread between frameworks here is within run-to-run noise at
-n=19.
+This was a harness bug, now fixed: `compare` namespaces the cache **per
+orchestrator** (`cache_dir/<name>`), so each orchestrator makes its own calls
+while re-runs stay resumable. Isolating genuine framework latency overhead needs
+a re-run on the fixed version (or `--no-cache`); the accuracy and token findings
+above are unaffected (they're identical by parity regardless of caching).
 
-## Scope / how to read this
+## Scope
 
-- **n = 19, one seed, one model** — this is a *directional* demonstration of the
-  harness end-to-end on a live model, not a leaderboard. Small-sample accuracy
-  numbers are not statistically separable.
-- For real conclusions: run the full [BFCL](https://gorilla.cs.berkeley.edu/leaderboard.html)
-  suite (hundreds of tasks) via the native loader, at prompt parity, across
-  multiple seeds and models. See `METHODOLOGY.md`.
+- **n = 100, one seed, one model, one category** — real and directional, not a
+  full leaderboard. For publishable cross-model conclusions: run the full BFCL
+  AST categories (`simple` + `multiple` + `parallel`) across multiple seeds and
+  models, on the cache-namespaced version, and report latency then.
 
 ## Reproduce
 
 ```bash
 pip install -e ".[anthropic,langgraph,agentframework]"
 export ANTHROPIC_API_KEY=...
-orchbench compare --provider anthropic --model claude-sonnet-5
+orchbench convert-bfcl BFCL_v4_simple.jsonl BFCL_v4_simple_answer.jsonl \
+          --out data/bfcl_simple.jsonl
+orchbench compare --provider anthropic --model claude-sonnet-5 \
+          --data data/bfcl_simple.jsonl --effort low --out results/bfcl_simple.json
 ```

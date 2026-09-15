@@ -261,6 +261,13 @@ def compare(
         for name in names:
             orch = get_orchestrator(name, model=model)
             per_orch: list[RunResult] = []
+            # Namespace the cache PER ORCHESTRATOR. At prompt parity every
+            # orchestrator issues identical requests, so a shared cache would
+            # serve the 2nd/3rd orchestrator from the 1st's responses -- making
+            # them free but also inheriting its latency, which destroys the
+            # cross-orchestrator latency comparison. Per-orchestrator caches keep
+            # re-runs resumable while keeping each orchestrator's calls its own.
+            orch_cache = (cache / name) if cache is not None else None
             for seed in range(seeds):
                 prov = _build_provider(
                     provider,
@@ -268,7 +275,7 @@ def compare(
                     profile=profile,
                     seed=seed,
                     model=model,
-                    cache_dir=cache,
+                    cache_dir=orch_cache,
                     retries=3,
                     thinking=thinking,
                     effort=effort,
