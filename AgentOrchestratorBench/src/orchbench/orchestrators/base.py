@@ -10,8 +10,9 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
+from orchbench.backends.base import ToolBackend
 from orchbench.providers.base import LLMProvider
-from orchbench.types import OrchestratorOutput, Task
+from orchbench.types import OrchestratorOutput, Scenario, Task, Trajectory
 
 
 @runtime_checkable
@@ -32,3 +33,22 @@ class Orchestrator(Protocol):
         classify the failure.
         """
         ...
+
+
+@runtime_checkable
+class EpisodeOrchestrator(Protocol):
+    """Run a multi-turn scenario to completion over a shared provider + backend.
+
+    The contract (enforced by a conformance test): same prompt/tools/backend/
+    max_turns across orchestrators (prompt parity extended to the loop), one
+    :class:`~orchbench.types.TurnRecord` per step, provider/backend errors
+    captured in the trajectory rather than raised. Within that, each orchestrator
+    uses its native loop -- which is where frameworks actually diverge.
+    """
+
+    name: str
+    model: str
+
+    async def run_episode(
+        self, scenario: Scenario, provider: LLMProvider, backend: ToolBackend
+    ) -> Trajectory: ...

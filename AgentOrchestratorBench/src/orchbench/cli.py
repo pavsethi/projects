@@ -19,10 +19,12 @@ import asyncio
 import json
 from pathlib import Path
 from statistics import mean, pstdev
+from typing import TYPE_CHECKING, cast
 
 import typer
 
-from orchbench.metrics import SuiteReport, aggregate
+from orchbench.backends import oracle_plan
+from orchbench.metrics import EpisodeReport, SuiteReport, aggregate, aggregate_episodes
 from orchbench.orchestrators import (
     ALL_NAMES,
     available_orchestrators,
@@ -31,15 +33,20 @@ from orchbench.orchestrators import (
 from orchbench.orchestrators.handrolled import HandRolledOrchestrator
 from orchbench.providers.base import LLMProvider
 from orchbench.providers.cache import CachingProvider
-from orchbench.providers.mock import PROFILES, MockProvider, build_fixtures
+from orchbench.providers.mock import PROFILES, MockProvider, build_episode_fixtures, build_fixtures
 from orchbench.providers.retry import RetryProvider
 from orchbench.runner import Runner
 from orchbench.suites.bfcl import load_bfcl_native, load_jsonl
-from orchbench.types import RunResult
+from orchbench.suites.multiturn import load_scenarios
+from orchbench.types import RunResult, Trajectory
+
+if TYPE_CHECKING:
+    from orchbench.orchestrators.base import EpisodeOrchestrator
 
 app = typer.Typer(add_completion=False, help="A reproducible eval harness for agent orchestrators.")
 
 _SAMPLE = Path(__file__).resolve().parents[2] / "data" / "bfcl_sample.jsonl"
+_MT_SAMPLE = Path(__file__).resolve().parents[2] / "data" / "multiturn_sample.jsonl"
 
 
 def _fmt_pct(x: float) -> str:
@@ -322,6 +329,99 @@ def report(files: list[Path]) -> None:
         comparison.append((label, rep))
     if len(comparison) > 1:
         _print_comparison(comparison)
+
+
+def _print_episode_report(report: EpisodeReport, label: str) -> None:
+    tts = f"{report.avg_turns_to_success:.1f}" if report.avg_turns_to_success is not None else "n/a"
+    typer.echo(f"\n=== {label}  (n={report.n}) ===")
+    typer.echo(f"  success rate      : {_fmt_pct(report.success_rate)}")
+    typer.echo(f"  avg turns→success : {tts}")
+    typer.echo(f"  recovery rate     : {_fmt_pct(report.recovery_rate)}")
+    typer.echo(f"  invalid-call rate : {_fmt_pct(report.invalid_call_rate)}")
+    typer.echo(f"  tokens/episode    : {report.avg_tokens_per_episode:8.1f}")
+    typer.echo(f"  est. cost (USD)   : ${report.est_cost_usd:.4f}")
+    typer.echo(
+        f"  latency ms        : p50={report.latency_p50_ms:6.0f} p95={report.latency_p95_ms:6.0f}"
+    )
+    nonzero = {k: v for k, v in report.failure_modes.items() if v and k != "none"}
+    if nonzero:
+        typer.echo("  failure modes:")
+        for mode, count in sorted(nonzero.items(), key=lambda kv: -kv[1]):
+            typer.echo(f"    {mode:20s} {count}")
+
+
+@app.command()
+def episodes(
+    data: Path = typer.Option(_MT_SAMPLE, help="Scenario dataset (JSONL)."),
+    provider: str = typer.Option("mock", help="Provider: 'mock' or 'anthropic'."),
+    model: str = typer.Option("mock-model", help="Model id (recorded and priced)."),
+    concurrency: int = typer.Option(8, help="Max concurrent episodes."),
+    thinking: bool = typer.Option(True, help="Adaptive thinking (real providers)."),
+    effort: str | None = typer.Option(None, help="Effort: low|medium|high|xhigh|max."),
+    out: Path | None = typer.Option(None, help="Write all trajectories JSON here."),
+) -> None:
+    """Run multi-turn scenarios through every episode-capable orchestrator.
+
+    On the mock provider this uses each backend's oracle plan to drive a correct
+    episode end-to-end with no API keys.
+    """
+    scenarios = load_scenarios(data)
+    names = [n for n in available_orchestrators() if hasattr(get_orchestrator(n), "run_episode")]
+    typer.echo(f"Multi-turn: {', '.join(names)}  (provider={provider}, {len(scenarios)} scenarios)")
+    runner = Runner(concurrency=concurrency)
+    comparison: list[tuple[str, EpisodeReport]] = []
+    all_trajectories: list[Trajectory] = []
+
+    def make_provider() -> LLMProvider:
+        if provider == "mock":
+            fixtures = {}
+            for scenario in scenarios:
+                fixtures.update(build_episode_fixtures(scenario.id, oracle_plan(scenario)))
+            return MockProvider(fixtures)
+        if provider == "anthropic":
+            from orchbench.providers.anthropic import AnthropicProvider
+
+            base: LLMProvider = AnthropicProvider(model=model, thinking=thinking, effort=effort)
+            return RetryProvider(base, max_retries=3)
+        raise typer.BadParameter(f"unknown provider {provider!r}")
+
+    async def go() -> None:
+        for name in names:
+            orch = cast("EpisodeOrchestrator", get_orchestrator(name, model=model))
+            trajectories = await runner.run_episodes(orch, scenarios, make_provider())
+            report = aggregate_episodes(trajectories)
+            _print_episode_report(report, label=f"{name}/{model}")
+            comparison.append((name, report))
+            all_trajectories.extend(trajectories)
+
+    asyncio.run(go())
+
+    if len(comparison) > 1:
+        typer.echo("\n" + "=" * 78)
+        typer.echo("MULTI-TURN COMPARISON")
+        typer.echo("=" * 78)
+        header = f"{'config':22s} {'success':>8s} {'recover':>8s} {'tok/ep':>9s} {'p95 ms':>8s}"
+        typer.echo(header)
+        typer.echo("-" * 78)
+        for label, r in comparison:
+            typer.echo(
+                f"{label:22s} {_fmt_pct(r.success_rate):>8s} {_fmt_pct(r.recovery_rate):>8s} "
+                f"{r.avg_tokens_per_episode:9.1f} {r.latency_p95_ms:8.0f}"
+            )
+
+    if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "meta": {
+                "command": "episodes",
+                "provider": provider,
+                "model": model,
+                "data": str(data),
+            },
+            "trajectories": [t.model_dump() for t in all_trajectories],
+        }
+        out.write_text(json.dumps(payload, indent=2))
+        typer.echo(f"\nWrote {len(all_trajectories)} trajectories to {out}")
 
 
 @app.command("convert-bfcl")

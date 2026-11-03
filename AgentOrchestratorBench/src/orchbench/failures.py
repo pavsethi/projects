@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from orchbench.types import FailureMode, OrchestratorOutput, Task
+from orchbench.types import FailureMode, OrchestratorOutput, Task, Trajectory
 
 
 def classify(
@@ -58,3 +58,30 @@ def summarize(modes: list[FailureMode]) -> dict[str, int]:
     """Count occurrences of each failure mode (stable, all keys present)."""
     counts = Counter(m.value for m in modes)
     return {mode.value: counts.get(mode.value, 0) for mode in FailureMode}
+
+
+def _has_stall(traj: Trajectory) -> bool:
+    """Two consecutive tool-calling turns left the state unchanged."""
+    prev_state = None
+    prev_called = False
+    for turn in traj.turns:
+        called = bool(turn.predicted)
+        if called and prev_called and turn.state_snapshot == prev_state:
+            return True
+        prev_state, prev_called = turn.state_snapshot, called
+    return False
+
+
+def classify_trajectory(traj: Trajectory, *, had_error: bool, recovered: bool) -> FailureMode:
+    """Assign the most-specific failure mode to a (failed) episode."""
+    if traj.succeeded:
+        return FailureMode.NONE
+    if traj.stop_reason == "provider_error":
+        return FailureMode.PROVIDER_ERROR
+    if had_error and not recovered:
+        return FailureMode.NO_RECOVERY
+    if _has_stall(traj):
+        return FailureMode.STALL_LOOP
+    if traj.stop_reason == "no_call":
+        return FailureMode.GAVE_UP
+    return FailureMode.MAX_TURNS_EXCEEDED

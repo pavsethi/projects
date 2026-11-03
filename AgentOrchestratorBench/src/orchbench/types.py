@@ -133,6 +133,14 @@ class FailureMode(str, Enum):
     EXTRA_CALL = "extra_call"  # more calls than the ground truth expects
     WRONG_ARGS = "wrong_args"  # right tool(s), wrong argument value(s)
 
+    # Multi-turn episode modes (see docs/multi-turn.md). Assigned by
+    # :func:`orchbench.failures.classify_trajectory`.
+    MAX_TURNS_EXCEEDED = "max_turns_exceeded"  # ran out of turns before the goal
+    NO_RECOVERY = "no_recovery"  # hit a tool error and never recovered
+    STALL_LOOP = "stall_loop"  # repeated a call with no state change
+    WRONG_ORDER = "wrong_order"  # right calls, a dependency was violated
+    GAVE_UP = "gave_up"  # stopped calling tools before reaching the goal
+
 
 class GradeResult(BaseModel):
     """Outcome of grading one orchestrator output against a task."""
@@ -165,3 +173,85 @@ class RunResult(BaseModel):
     @property
     def total_tokens(self) -> int:
         return self.prompt_tokens + self.completion_tokens
+
+
+# --------------------------------------------------------------------------- #
+# Multi-turn tool use (orchbench v0.2 — see docs/multi-turn.md).
+# The single-step path above is unchanged; these are additive.
+# --------------------------------------------------------------------------- #
+
+
+class ToolResult(BaseModel):
+    """The result of executing one predicted call against a tool backend."""
+
+    call_id: str
+    ok: bool
+    content: Any = None  # structured result the model sees on the next turn
+    error: str | None = None  # set when ok is False (bad args / unknown tool)
+
+
+class Scenario(BaseModel):
+    """A multi-turn task: a stateful world plus scripted user turns and a goal."""
+
+    id: str
+    suite: str = "multiturn"
+    category: str = "multi_turn"
+    tools: list[ToolSpec] = Field(default_factory=list)
+    user_turns: list[str] = Field(default_factory=list)  # scripted, one per user step
+    backend: str = "records"  # registry key: which ToolBackend to build
+    initial_state: dict[str, Any] = Field(default_factory=dict)
+    # Goal is checked by the backend's predicate against final state; shape is
+    # backend-specific (e.g. {"field_equals": [{"record", "field", "value"}]}).
+    goal: dict[str, Any] = Field(default_factory=dict)
+    max_turns: int = 8
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class TurnRecord(BaseModel):
+    """One step of an episode: an assistant turn and the tool results it drove."""
+
+    index: int
+    role: str = "assistant"
+    predicted: list[PredictedCall] = Field(default_factory=list)
+    results: list[ToolResult] = Field(default_factory=list)
+    text: str = ""
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    latency_ms: float = 0.0
+    error: str | None = None  # provider error on this turn, if any
+    state_snapshot: dict[str, Any] = Field(default_factory=dict)
+
+
+class Trajectory(BaseModel):
+    """The full record of one orchestrator running one scenario.
+
+    This is the frozen v0.2 schema the UI trajectory explorer consumes; keep it
+    additive.
+    """
+
+    scenario_id: str
+    suite: str = "multiturn"
+    category: str = "multi_turn"
+    orchestrator: str
+    provider: str
+    model: str
+    seed: int = 0
+
+    turns: list[TurnRecord] = Field(default_factory=list)
+    succeeded: bool = False
+    stop_reason: str = ""  # "goal" | "no_call" | "max_turns" | "provider_error"
+    failure_mode: FailureMode = FailureMode.NONE
+    turns_to_success: int | None = None
+    final_state: dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def total_tokens(self) -> int:
+        return sum(t.prompt_tokens + t.completion_tokens for t in self.turns)
+
+    @property
+    def total_latency_ms(self) -> float:
+        return sum(t.latency_ms for t in self.turns)
+
+    @property
+    def n_turns(self) -> int:
+        return len(self.turns)

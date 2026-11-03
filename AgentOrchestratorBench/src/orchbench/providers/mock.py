@@ -194,7 +194,12 @@ def build_fixtures(
 
 
 class MockProvider:
-    """Serves pre-computed responses keyed by ``request.metadata['task_id']``."""
+    """Serves pre-computed responses keyed by ``request.metadata['task_id']``.
+
+    For multi-turn episodes a response is looked up by ``"{task_id}#{turn}"``
+    first (so each turn can return a different call), falling back to the plain
+    ``task_id`` for single-step tasks.
+    """
 
     def __init__(self, fixtures: dict[str, ModelResponse], name: str = "mock") -> None:
         self._fixtures = fixtures
@@ -202,7 +207,42 @@ class MockProvider:
 
     async def complete(self, request: LLMRequest) -> ModelResponse:
         task_id = request.metadata.get("task_id")
-        if task_id is None or task_id not in self._fixtures:
+        turn = request.metadata.get("turn")
+        key: str | None = None
+        if task_id is not None and turn is not None and f"{task_id}#{turn}" in self._fixtures:
+            key = f"{task_id}#{turn}"
+        elif task_id in self._fixtures:
+            key = task_id
+        if key is None:
+            # Past the end of a scripted episode, "no tool call" means "done".
+            if task_id is not None and turn is not None:
+                return ModelResponse(text="done", tool_calls=[])
             return ModelResponse(error=f"no mock fixture for task_id={task_id!r}")
         # Return a copy so callers can annotate (e.g. cached=True) safely.
-        return self._fixtures[task_id].model_copy(deep=True)
+        return self._fixtures[key].model_copy(deep=True)
+
+
+def build_episode_fixtures(
+    scenario_id: str,
+    plan: list[list[PredictedCall]],
+    *,
+    prompt_tokens: int = 300,
+    completion_tokens: int = 40,
+    latency_ms: float = 500.0,
+) -> dict[str, ModelResponse]:
+    """Deterministic per-turn responses for one scripted episode.
+
+    ``plan[i]`` is the tool calls the model "makes" on turn ``i``; an empty list
+    means it stops. Keys are ``"{scenario_id}#{i}"``. This is how multi-turn is
+    exercised with zero API keys (see docs/multi-turn.md).
+    """
+    fixtures: dict[str, ModelResponse] = {}
+    for i, calls in enumerate(plan):
+        fixtures[f"{scenario_id}#{i}"] = ModelResponse(
+            tool_calls=list(calls),
+            text="" if calls else "done",
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            latency_ms=latency_ms,
+        )
+    return fixtures

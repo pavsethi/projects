@@ -13,7 +13,7 @@ from statistics import mean
 from pydantic import BaseModel, Field
 
 from orchbench.failures import summarize
-from orchbench.types import FailureMode, RunResult
+from orchbench.types import FailureMode, RunResult, Trajectory
 
 # Illustrative pricing, USD per 1M tokens (input, output). Edit for real models;
 # "mock-model" is priced so the demo shows a non-zero, comparable cost column.
@@ -116,4 +116,75 @@ def aggregate(results: list[RunResult]) -> SuiteReport:
         latency_mean_ms=mean(latencies),
         failure_modes=summarize([FailureMode(r.grade.failure_mode) for r in results]),
         by_category=by_category,
+    )
+
+
+class EpisodeReport(BaseModel):
+    """Aggregate metrics for one orchestrator's multi-turn sweep."""
+
+    orchestrator: str
+    model: str
+    provider: str
+    n: int
+
+    success_rate: float
+    avg_turns_to_success: float | None  # mean turns among successes
+    recovery_rate: float  # of episodes that hit a tool error, fraction that still succeeded
+    invalid_call_rate: float  # fraction of all calls the backend rejected
+
+    total_tokens: int
+    avg_tokens_per_episode: float
+    est_cost_usd: float
+
+    latency_p50_ms: float
+    latency_p95_ms: float
+
+    failure_modes: dict[str, int]
+
+
+def aggregate_episodes(trajectories: list[Trajectory]) -> EpisodeReport:
+    """Collapse trajectories into a multi-turn report."""
+    if not trajectories:
+        raise ValueError("cannot aggregate an empty trajectory set")
+
+    n = len(trajectories)
+    successes = [t for t in trajectories if t.succeeded]
+    success_rate = len(successes) / n
+    _tts = [t.turns_to_success for t in successes if t.turns_to_success]
+    avg_tts = mean(_tts) if _tts else None
+
+    # Recovery: among episodes that hit at least one tool error, how many succeeded.
+    def hit_error(t: Trajectory) -> bool:
+        return any(not r.ok for turn in t.turns for r in turn.results)
+
+    errored = [t for t in trajectories if hit_error(t)]
+    recovery_rate = sum(1 for t in errored if t.succeeded) / len(errored) if errored else 0.0
+
+    total_calls = sum(len(turn.results) for t in trajectories for turn in t.turns)
+    bad_calls = sum(1 for t in trajectories for turn in t.turns for r in turn.results if not r.ok)
+    invalid_call_rate = (bad_calls / total_calls) if total_calls else 0.0
+
+    total_tokens = sum(t.total_tokens for t in trajectories)
+    latencies = [t.total_latency_ms for t in trajectories]
+    model = trajectories[0].model
+    # Approximate input/output split per episode as prompt vs completion sums.
+    prompt_tokens = sum(turn.prompt_tokens for t in trajectories for turn in t.turns)
+    completion_tokens = sum(turn.completion_tokens for t in trajectories for turn in t.turns)
+    est_cost = estimate_cost_usd(prompt_tokens, completion_tokens, model)
+
+    return EpisodeReport(
+        orchestrator=trajectories[0].orchestrator,
+        model=model,
+        provider=trajectories[0].provider,
+        n=n,
+        success_rate=success_rate,
+        avg_turns_to_success=avg_tts,
+        recovery_rate=recovery_rate,
+        invalid_call_rate=invalid_call_rate,
+        total_tokens=total_tokens,
+        avg_tokens_per_episode=total_tokens / n,
+        est_cost_usd=est_cost,
+        latency_p50_ms=_percentile(latencies, 0.50),
+        latency_p95_ms=_percentile(latencies, 0.95),
+        failure_modes=summarize([FailureMode(t.failure_mode) for t in trajectories]),
     )

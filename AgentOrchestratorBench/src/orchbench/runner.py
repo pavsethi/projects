@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import asyncio
 
+from orchbench.backends import get_backend
 from orchbench.grading import grade_output
-from orchbench.orchestrators.base import Orchestrator
+from orchbench.orchestrators.base import EpisodeOrchestrator, Orchestrator
 from orchbench.providers.base import LLMProvider
-from orchbench.types import RunResult, Task
+from orchbench.types import RunResult, Scenario, Task, Trajectory
 
 
 class Runner:
@@ -53,3 +54,22 @@ class Runner:
             )
 
         return await asyncio.gather(*(run_one(task) for task in tasks))
+
+    async def run_episodes(
+        self,
+        orchestrator: EpisodeOrchestrator,
+        scenarios: list[Scenario],
+        provider: LLMProvider,
+        seed: int = 0,
+    ) -> list[Trajectory]:
+        """Run a multi-turn sweep. Each scenario gets a fresh backend instance."""
+        semaphore = asyncio.Semaphore(self.concurrency)
+
+        async def run_one(scenario: Scenario) -> Trajectory:
+            backend = get_backend(scenario.backend)
+            async with semaphore:
+                traj = await orchestrator.run_episode(scenario, provider, backend)
+            traj.seed = seed
+            return traj
+
+        return await asyncio.gather(*(run_one(s) for s in scenarios))

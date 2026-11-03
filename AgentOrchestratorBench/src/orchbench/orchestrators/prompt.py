@@ -10,7 +10,9 @@ here enforces prompt parity (see ``METHODOLOGY.md`` -> Fairness caveats).
 
 from __future__ import annotations
 
-from orchbench.types import Task, ToolSpec
+import json
+
+from orchbench.types import PredictedCall, Scenario, Task, ToolResult, ToolSpec
 
 ROUTING_SYSTEM_PROMPT = (
     "You are a tool-routing engine. Given a user request and a set of tools, "
@@ -44,3 +46,42 @@ def build_routing_messages(task: Task, *, nudge: bool = False) -> list[dict]:
         {"role": "system", "content": ROUTING_SYSTEM_PROMPT},
         {"role": "user", "content": user},
     ]
+
+
+# --------------------------------------------------------------------------- #
+# Multi-turn (shared by every orchestrator's episode loop — see docs/multi-turn.md).
+# --------------------------------------------------------------------------- #
+
+MULTITURN_SYSTEM_PROMPT = (
+    "You are a tool-using agent. Fulfil the user's request by calling the "
+    "available tools. Tools return results; use each result to decide the next "
+    "call, and keep calling until the request is fully done. If a tool returns an "
+    "error, adjust and try again. When the task is complete, stop calling tools "
+    "and reply with a brief confirmation."
+)
+
+
+def build_episode_messages(scenario: Scenario) -> list[dict]:
+    """Opening messages for an episode: system + the first scripted user turn."""
+    first = scenario.user_turns[0] if scenario.user_turns else ""
+    return [
+        {"role": "system", "content": MULTITURN_SYSTEM_PROMPT},
+        {"role": "user", "content": first},
+    ]
+
+
+def calls_to_text(calls: list[PredictedCall]) -> str:
+    """Serialise an assistant turn's tool calls for the message history.
+
+    Shared so every orchestrator formats history identically (parity). This is a
+    functional text encoding; mapping to a provider's native tool-call/tool-result
+    blocks (for the real Anthropic provider) is an M2 refinement.
+    """
+    return json.dumps([{"name": c.name, "arguments": c.args} for c in calls])
+
+
+def results_to_text(results: list[ToolResult]) -> str:
+    """Serialise tool results as the next user turn."""
+    return json.dumps(
+        [{"call": r.call_id, "ok": r.ok, "result": r.content, "error": r.error} for r in results]
+    )

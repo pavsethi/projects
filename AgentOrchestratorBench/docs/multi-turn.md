@@ -53,25 +53,27 @@ New types in `orchbench/types.py` (pydantic, like the rest):
 class ToolResult(BaseModel):
     call_id: str
     ok: bool
-    content: Any = None          # structured result the model sees
-    error: str | None = None     # set when ok is False (e.g. bad args)
+    content: Any = None  # structured result the model sees
+    error: str | None = None  # set when ok is False (e.g. bad args)
+
 
 class Scenario(BaseModel):
     id: str
     suite: str = "multiturn"
     category: str = "multi_turn"
     tools: list[ToolSpec]
-    user_turns: list[str]        # scripted; delivered one per "user" step
-    backend: str                 # registry key: which ToolBackend to build
+    user_turns: list[str]  # scripted; delivered one per "user" step
+    backend: str  # registry key: which ToolBackend to build
     initial_state: dict[str, Any] = {}
     # success is checked by the backend's goal predicate against final state;
     # `goal` is backend-specific config (e.g. expected rows, required calls).
     goal: dict[str, Any] = {}
     max_turns: int = 8
 
+
 class TurnRecord(BaseModel):
     index: int
-    role: str                    # "user" | "assistant"
+    role: str  # "user" | "assistant"
     predicted: list[PredictedCall] = []
     results: list[ToolResult] = []
     text: str = ""
@@ -80,13 +82,14 @@ class TurnRecord(BaseModel):
     latency_ms: float = 0.0
     state_snapshot: dict[str, Any] = {}
 
+
 class Trajectory(BaseModel):
     scenario_id: str
     orchestrator: str
     turns: list[TurnRecord]
-    succeeded: bool              # goal predicate on final state
-    stop_reason: str             # "goal" | "no_call" | "max_turns" | "error"
-    failure_mode: FailureMode    # taxonomy, §8
+    succeeded: bool  # goal predicate on final state
+    stop_reason: str  # "goal" | "no_call" | "max_turns" | "error"
+    failure_mode: FailureMode  # taxonomy, §8
     total_tokens: int
     total_latency_ms: float
     turns_to_success: int | None
@@ -97,10 +100,11 @@ class Trajectory(BaseModel):
 ```python
 class ToolBackend(Protocol):
     name: str
+
     def reset(self, initial_state: dict) -> None: ...
-    def execute(self, call: PredictedCall) -> ToolResult: ...   # mutates state
-    def state(self) -> dict: ...                                # snapshot
-    def goal_reached(self, goal: dict) -> bool: ...             # success predicate
+    def execute(self, call: PredictedCall) -> ToolResult: ...  # mutates state
+    def state(self) -> dict: ...  # snapshot
+    def goal_reached(self, goal: dict) -> bool: ...  # success predicate
 ```
 
 - **Deterministic and in-process** — no network, no clock, no randomness

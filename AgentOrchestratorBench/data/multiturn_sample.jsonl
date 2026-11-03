@@ -1,0 +1,7 @@
+# orchbench multi-turn scenarios (records backend). One scenario per line.
+# Fields: id, user_turns[], backend, initial_state, goal, [max_turns].
+# tools are filled from the backend's defaults when omitted. See docs/multi-turn.md.
+{"id": "ship_order", "backend": "records", "user_turns": ["Mark Alice's order as shipped."], "initial_state": {"records": {"r1": {"name": "Alice order", "status": "pending"}, "r2": {"name": "Bob order", "status": "pending"}}}, "goal": {"field_equals": [{"record": "r1", "field": "status", "value": "shipped"}]}}
+{"id": "bump_priority", "backend": "records", "user_turns": ["The login bug is urgent — set its priority to high."], "initial_state": {"records": {"t1": {"name": "Deploy website", "priority": "low"}, "t2": {"name": "Fix login bug", "priority": "low"}}}, "goal": {"field_equals": [{"record": "t2", "field": "priority", "value": "high"}]}}
+{"id": "cancel_sub", "backend": "records", "user_turns": ["Cancel Carol's subscription (set its status to cancelled)."], "initial_state": {"records": {"c100": {"name": "Carol subscription", "status": "active"}}}, "goal": {"field_equals": [{"record": "c100", "field": "status", "value": "cancelled"}]}}
+{"id": "close_ticket", "backend": "records", "user_turns": ["Close the ticket about the payment page."], "initial_state": {"records": {"k1": {"name": "Payment page error", "status": "open"}, "k2": {"name": "Homepage typo", "status": "open"}}}, "goal": {"field_equals": [{"record": "k1", "field": "status", "value": "closed"}]}}
