@@ -17,7 +17,37 @@ from orchbench.episode import summarize_goal
 from orchbench.grading import grade_output
 from orchbench.orchestrators.base import EpisodeOrchestrator, Orchestrator
 from orchbench.providers.base import LLMProvider
+from orchbench.providers.retry import is_fatal_account_error
 from orchbench.types import RunResult, Scenario, Task, Trajectory
+
+
+class FatalProviderError(RuntimeError):
+    """Raised to abort a sweep on a provider error that will recur for every call.
+
+    An exhausted credit balance, a bad API key or revoked model access are not
+    per-scenario outcomes -- once they strike, every remaining call fails the same
+    way. Recording them as ``PROVIDER_ERROR`` trajectories would silently corrupt
+    the headline accuracy (a dead account reads as "~20% of scenarios failed"), so
+    the runner raises this instead: the sweep stops before spending more on doomed
+    calls, the offending trajectory is never checkpointed, and the operator can fix
+    the account and ``--resume`` the rest.
+    """
+
+    def __init__(self, orchestrator: str, scenario_id: str, error: str) -> None:
+        self.orchestrator = orchestrator
+        self.scenario_id = scenario_id
+        self.error = error
+        super().__init__(f"fatal provider error on {orchestrator}/{scenario_id}: {error}")
+
+
+def _aborting_error(traj: Trajectory) -> str | None:
+    """The provider-error text that ended a trajectory, if it ended on one."""
+    if traj.stop_reason != "provider_error":
+        return None
+    for turn in reversed(traj.turns):
+        if turn.error:
+            return turn.error
+    return None
 
 
 class Runner:
@@ -99,6 +129,12 @@ class Runner:
                 traj.instruction = scenario.user_turns[0]
             if not traj.goal_summary:
                 traj.goal_summary = summarize_goal(scenario)
+            # Abort the whole sweep on an account/credential fault rather than
+            # checkpointing a doomed trajectory (it must stay un-done so --resume
+            # retries it once the account is fixed).
+            err = _aborting_error(traj)
+            if err is not None and is_fatal_account_error(err):
+                raise FatalProviderError(orch.name, scenario.id, err)
             if on_result is not None:
                 on_result(traj)
             return traj
@@ -114,4 +150,18 @@ class Runner:
             for orch in orchestrators[i % n :] + orchestrators[: i % n]
             if (orch.name, scenario.id) not in done
         ]
-        return await asyncio.gather(*(run_one(o, s) for o, s in pairs))
+        if not pairs:
+            return []
+        # Fail fast: a FatalProviderError from any episode means every remaining
+        # call would fail too, so cancel the rest and re-raise instead of letting
+        # asyncio.run tear down the loop with orphaned, still-billing tasks.
+        tasks = [asyncio.create_task(run_one(o, s)) for o, s in pairs]
+        completed, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+        fatal = next((t.exception() for t in completed if t.exception() is not None), None)
+        if fatal is not None:
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+            raise fatal
+        return [task.result() for task in tasks]

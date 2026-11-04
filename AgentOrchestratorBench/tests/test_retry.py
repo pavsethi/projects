@@ -1,4 +1,4 @@
-from orchbench.providers.retry import RetryProvider, is_transient
+from orchbench.providers.retry import RetryProvider, is_fatal_account_error, is_transient
 from orchbench.types import LLMRequest, ModelResponse, PredictedCall
 
 
@@ -29,6 +29,23 @@ def test_is_transient():
     assert is_transient("503 Service Unavailable")
     assert not is_transient("400 invalid_request: bad tool schema")
     assert not is_transient("authentication_error")
+
+
+def test_is_fatal_account_error():
+    # Account/credential faults that recur on every subsequent call.
+    assert is_fatal_account_error(
+        "BadRequestError: Error code: 400 - "
+        "{'type': 'invalid_request_error', 'message': 'Your credit balance is too low "
+        "to access the Claude API.'}"
+    )
+    assert is_fatal_account_error("AuthenticationError: Error code: 401 - authentication_error")
+    assert is_fatal_account_error("PermissionDeniedError: Error code: 403 - permission_error")
+    # Per-scenario failures and transients are NOT fatal -- they must not abort a sweep.
+    assert not is_fatal_account_error("400 invalid_request: bad tool schema")
+    assert not is_fatal_account_error("429 rate limit")
+    assert not is_fatal_account_error("503 overloaded")
+    # Fatal account errors are disjoint from transient (retrying them wastes money).
+    assert not is_transient("Your credit balance is too low to access the Claude API")
 
 
 async def test_retries_then_succeeds():

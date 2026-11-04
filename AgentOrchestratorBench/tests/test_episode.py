@@ -9,7 +9,7 @@ from orchbench.backends import default_tools, get_backend, oracle_plan
 from orchbench.metrics import aggregate_episodes
 from orchbench.orchestrators.handrolled import HandRolledOrchestrator
 from orchbench.providers.mock import MockProvider, build_episode_fixtures
-from orchbench.runner import Runner
+from orchbench.runner import FatalProviderError, Runner
 from orchbench.suites.multiturn import load_scenarios
 from orchbench.types import (
     FailureMode,
@@ -142,6 +142,61 @@ async def test_recovery_counts_as_success():
     report = aggregate_episodes(trajectories)
     assert report.recovery_rate == 1.0
     assert report.invalid_call_rate == 0.5  # 1 of 2 calls errored
+
+
+# ----------------------- fail-fast on account faults ------------------------- #
+
+
+class _ErrorProvider:
+    """Returns a fixed provider error on every call (no successful responses)."""
+
+    name = "dead"
+
+    def __init__(self, error: str) -> None:
+        self.error = error
+        self.calls = 0
+
+    async def complete(self, request: LLMRequest) -> ModelResponse:
+        self.calls += 1
+        return ModelResponse(error=self.error)
+
+
+async def test_run_matrix_aborts_on_fatal_account_error():
+    # A dead account (exhausted credit) must stop the sweep, not log N failures.
+    s1 = _records_scenario()
+    s2 = s1.model_copy(update={"id": "t2"})
+    provider = _ErrorProvider(
+        "BadRequestError: Error code: 400 - Your credit balance is too low "
+        "to access the Claude API."
+    )
+    checkpointed: list[Trajectory] = []
+    with pytest.raises(FatalProviderError) as excinfo:
+        await Runner(concurrency=4).run_matrix(
+            [HandRolledOrchestrator(model="mock-model")],
+            [s1, s2],
+            lambda _name: provider,
+            on_result=checkpointed.append,
+        )
+    assert "credit balance" in excinfo.value.error.lower()
+    # The doomed trajectories are never checkpointed, so --resume retries them.
+    assert checkpointed == []
+
+
+async def test_run_matrix_records_ordinary_provider_error_without_aborting():
+    # A one-off per-scenario rejection is a real PROVIDER_ERROR, not a reason to abort.
+    s = _records_scenario()
+    provider = _ErrorProvider("400 invalid_request: bad tool schema")
+    checkpointed: list[Trajectory] = []
+    trajectories = await Runner().run_matrix(
+        [HandRolledOrchestrator(model="mock-model")],
+        [s],
+        lambda _name: provider,
+        on_result=checkpointed.append,
+    )
+    assert len(trajectories) == 1
+    assert trajectories[0].stop_reason == "provider_error"
+    assert trajectories[0].failure_mode == FailureMode.PROVIDER_ERROR
+    assert len(checkpointed) == 1  # recorded, not aborted
 
 
 # ----------------------------- loader ---------------------------------------- #

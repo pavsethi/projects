@@ -36,7 +36,7 @@ from orchbench.providers.base import LLMProvider
 from orchbench.providers.cache import CachingProvider
 from orchbench.providers.mock import PROFILES, MockProvider, build_episode_fixtures, build_fixtures
 from orchbench.providers.retry import RetryProvider
-from orchbench.runner import Runner
+from orchbench.runner import FatalProviderError, Runner
 from orchbench.suites.bfcl import load_bfcl_native, load_jsonl
 from orchbench.suites.multiturn import load_scenarios
 from orchbench.types import RunResult, Scenario, Trajectory
@@ -516,11 +516,33 @@ def episodes(
             with partial.open("a", encoding="utf-8") as fh:
                 fh.write(traj.model_dump_json() + "\n")
 
-    new = asyncio.run(
-        Runner(concurrency=concurrency).run_matrix(
-            orchs, scenarios, lambda _name: shared, skip=done, on_result=checkpoint
+    try:
+        new = asyncio.run(
+            Runner(concurrency=concurrency).run_matrix(
+                orchs, scenarios, lambda _name: shared, skip=done, on_result=checkpoint
+            )
         )
-    )
+    except FatalProviderError as exc:
+        typer.secho(
+            f"\nAborted: the provider rejected a request in a way that will recur for "
+            f"every call ({exc.orchestrator}/{exc.scenario_id}).",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        typer.secho(f"  {exc.error}", fg=typer.colors.RED, err=True)
+        if partial is not None and partial.exists():
+            n_good = sum(1 for line in partial.read_text().splitlines() if line.strip())
+            typer.echo(
+                f"\n{n_good} completed trajectories are safe in {partial}.\n"
+                "Fix the account (top up credit / check ANTHROPIC_API_KEY / model access), "
+                "then re-run the same command with --resume to finish the rest."
+            )
+        else:
+            typer.echo(
+                "\nNo checkpoint was written -- pass --out to make runs resumable. "
+                "Fix the account, then re-run."
+            )
+        raise typer.Exit(code=1) from exc
     all_trajectories = prior + list(new)
 
     comparison: list[tuple[str, EpisodeReport]] = []

@@ -43,6 +43,36 @@ def is_transient(error: str) -> bool:
     return any(marker in low for marker in _TRANSIENT_MARKERS)
 
 
+# Substrings that mark an error the *account* can't recover from mid-sweep: a bad
+# or missing key, revoked access, or exhausted credit. These recur on every
+# subsequent call, so the right response is to abort the sweep (see
+# ``runner.FatalProviderError``) rather than retry (wastes money) or record a
+# per-scenario PROVIDER_ERROR (silently corrupts the headline accuracy). Kept
+# deliberately narrow: a 400 *schema* error is a real per-scenario failure and
+# must not match, so we key billing off the specific "credit balance" text, never
+# the shared ``invalid_request_error`` type. A plain 429 stays transient -- it may
+# be a passing rate spike, not a dead account.
+_FATAL_ACCOUNT_MARKERS = (
+    "credit balance",  # exhausted credit (400 invalid_request_error)
+    "billing",
+    "authentication_error",  # bad/missing key (401)
+    "authenticationerror",  # SDK exception type name
+    "error code: 401",
+    "invalid_api_key",
+    "invalid x-api-key",
+    "permission_error",  # key lacks access to the model (403)
+    "permissiondeniederror",
+    "error code: 403",
+    "account is not active",
+)
+
+
+def is_fatal_account_error(error: str) -> bool:
+    """True if ``error`` is an account/credential fault that will recur every call."""
+    low = error.lower()
+    return any(marker in low for marker in _FATAL_ACCOUNT_MARKERS)
+
+
 class RetryProvider:
     """Retry a wrapped provider on transient errors with exponential backoff."""
 
