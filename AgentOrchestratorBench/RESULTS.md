@@ -85,6 +85,13 @@ typically `search_records` → `update_record`. Grading is **goal-state**: did t
 backend end up in the required state, not did the transcript match a script.
 See [`docs/multi-turn.md`](docs/multi-turn.md).
 
+> **Not BFCL multi-turn.** These are 4 small hand-written scenarios that check the
+> multi-turn harness works end to end. They are **not comparable** to the BFCL
+> leaderboard's Multi Turn column (~60–68% for top models), which uses hundreds
+> of scenarios over large stateful APIs, missing-parameter and missing-function
+> cases, and long multi-step chains. Ingesting BFCL's own multi-turn category is
+> the planned next step (see `docs/multi-turn.md` §11).
+
 ## Run
 
 | Setting | Value |
