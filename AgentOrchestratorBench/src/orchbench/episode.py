@@ -39,6 +39,13 @@ def summarize_goal(scenario: Scenario) -> str:
     Handles the ``records`` backend's ``field_equals`` shape (naming records by
     their human name when present); falls back to the raw goal for others.
     """
+    if scenario.goal.get("checker") == "bfcl_multi_turn":
+        gt = scenario.initial_state.get("ground_truth", [])
+        n_calls = sum(len(t) for t in gt)
+        return (
+            f"Match BFCL's ground-truth state and results after each of {len(gt)} "
+            f"user turns ({n_calls} reference calls)"
+        )
     clauses = scenario.goal.get("field_equals")
     if not clauses:
         return str(scenario.goal) if scenario.goal else ""

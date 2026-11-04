@@ -206,6 +206,10 @@ class ToolResult(BaseModel):
     ok: bool
     content: Any = None  # structured result the model sees on the next turn
     error: str | None = None  # set when ok is False (bad args / unknown tool)
+    # Whether the model is told the call errored (Anthropic ``is_error``).
+    # None = "not ok". BFCL sets False: its runs never flag errors to the model;
+    # the error text is just the result (``ok`` still drives our metrics).
+    is_error: bool | None = None
 
 
 class Scenario(BaseModel):

@@ -5,13 +5,16 @@ from __future__ import annotations
 from typing import Any
 
 from orchbench.backends.base import ToolBackend
+from orchbench.backends.bfcl import BFCLBackend
+from orchbench.backends.bfcl import oracle_plan as _bfcl_oracle
 from orchbench.backends.records import TOOLS as RECORDS_TOOLS
 from orchbench.backends.records import RecordsBackend
 from orchbench.backends.records import oracle_plan as _records_oracle
 from orchbench.types import PredictedCall, ToolSpec
 
-_BACKENDS = {
+_BACKENDS: dict[str, type] = {
     "records": RecordsBackend,
+    "bfcl": BFCLBackend,
 }
 
 _DEFAULT_TOOLS = {
@@ -20,6 +23,7 @@ _DEFAULT_TOOLS = {
 
 _ORACLES = {
     "records": _records_oracle,
+    "bfcl": _bfcl_oracle,
 }
 
 

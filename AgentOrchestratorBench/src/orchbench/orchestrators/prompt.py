@@ -117,7 +117,11 @@ def tool_results_message(calls: list[PredictedCall], results: list[ToolResult]) 
     return {
         "role": "tool",
         "results": [
-            {"id": c.id, "content": result_text(r), "is_error": not r.ok}
+            {
+                "id": c.id,
+                "content": result_text(r),
+                "is_error": (not r.ok) if r.is_error is None else r.is_error,
+            }
             for c, r in zip(calls, results, strict=True)
         ],
     }
