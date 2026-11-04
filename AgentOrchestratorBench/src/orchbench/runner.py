@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 
 from orchbench.backends import get_backend
+from orchbench.episode import summarize_goal
 from orchbench.grading import grade_output
 from orchbench.orchestrators.base import EpisodeOrchestrator, Orchestrator
 from orchbench.providers.base import LLMProvider
@@ -70,6 +71,11 @@ class Runner:
             async with semaphore:
                 traj = await orchestrator.run_episode(scenario, provider, backend)
             traj.seed = seed
+            # Attach human-readable context so the trajectory is self-describing.
+            if not traj.instruction and scenario.user_turns:
+                traj.instruction = scenario.user_turns[0]
+            if not traj.goal_summary:
+                traj.goal_summary = summarize_goal(scenario)
             return traj
 
         return await asyncio.gather(*(run_one(s) for s in scenarios))

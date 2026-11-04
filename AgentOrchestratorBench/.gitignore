@@ -16,3 +16,7 @@ venv/
 # orchbench outputs
 results/
 .orchbench_cache/
+
+# Secrets — never commit
+.env
+.env.*

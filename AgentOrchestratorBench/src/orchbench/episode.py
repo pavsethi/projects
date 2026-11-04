@@ -25,6 +25,23 @@ from orchbench.orchestrators.prompt import build_episode_messages, calls_to_text
 from orchbench.types import PredictedCall, Scenario, Trajectory, TurnRecord
 
 
+def summarize_goal(scenario: Scenario) -> str:
+    """A plain-language one-liner for a scenario's goal (best-effort, backend-aware).
+
+    Handles the ``records`` backend's ``field_equals`` shape (naming records by
+    their human name when present); falls back to the raw goal for others.
+    """
+    clauses = scenario.goal.get("field_equals")
+    if not clauses:
+        return str(scenario.goal) if scenario.goal else ""
+    records = scenario.initial_state.get("records", {})
+    parts = []
+    for c in clauses:
+        name = records.get(c["record"], {}).get("name", c["record"])
+        parts.append(f'"{name}" → {c["field"]} = {c["value"]}')
+    return "; ".join(parts)
+
+
 @dataclass
 class StepResult:
     """One model turn's output, produced by an orchestrator's native call path."""

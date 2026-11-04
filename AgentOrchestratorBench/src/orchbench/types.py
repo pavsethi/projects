@@ -237,6 +237,11 @@ class Trajectory(BaseModel):
     model: str
     seed: int = 0
 
+    # Human-readable context (so a trajectory is self-describing in the UI /
+    # a raw results file): the user instruction and a plain goal summary.
+    instruction: str = ""
+    goal_summary: str = ""
+
     turns: list[TurnRecord] = Field(default_factory=list)
     succeeded: bool = False
     stop_reason: str = ""  # "goal" | "no_call" | "max_turns" | "provider_error"

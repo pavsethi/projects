@@ -83,6 +83,9 @@ async def test_sample_episodes_all_succeed_on_oracle():
     assert all(t.failure_mode == FailureMode.NONE for t in trajectories)
     # search -> update -> goal == 2 turns.
     assert all(t.turns_to_success == 2 for t in trajectories)
+    # Trajectories carry human-readable context (instruction + goal summary).
+    assert all(t.instruction for t in trajectories)
+    assert all(t.goal_summary for t in trajectories)
 
 
 async def test_no_recovery_failure():
