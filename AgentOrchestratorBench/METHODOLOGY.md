@@ -118,7 +118,70 @@ accuracy can fail completely differently (one loses to `wrong_args`, another to
    orchestrator that cannot abstain should simply not be scored on `irrelevance`
    rather than be recorded as 0%.
 
-## Reproducing a real run
+6. **Native tool-call history.** Multi-turn history is structured (assistant
+   tool calls with ids, then a tool-results message) and each provider maps it to
+   its native format: for Anthropic, `tool_use` / `tool_result` blocks, with the
+   model's raw content (including thinking blocks) replayed unchanged. An earlier
+   version serialised calls and results as JSON text in ordinary messages, which
+   is not how real agents talk to the API. `tests/test_multi_user_turn.py` pins
+   that all three orchestrators send byte-identical request sequences.
+7. **Run order is counterbalanced.** At prompt parity, orchestrators' first
+   requests share a long prefix (BFCL's tool list), so whichever runs first pays
+   the provider prompt-cache write and the others read it at 0.1x and faster.
+   `episodes` runs each scenario on every orchestrator back to back (so API load
+   drifts equally) and rotates which one goes first. Cross-orchestrator cost is
+   compared **uncached** (`$ uncached`); billed cost is reported separately.
+
+## BFCL multi-turn
+
+`orchbench episodes --suite bfcl` runs BFCL v4's four multi-turn categories
+(`base`, `miss_func`, `miss_param`, `long_context`; 200 scenarios each) through
+every orchestrator. The data and the stateful APIs it runs against are vendored
+from `bfcl-eval` 2026.3.23 under Apache-2.0 (`data/bfcl_multi_turn/`,
+`src/orchbench/vendor/bfcl_multi_turn/`, with LICENSE and NOTICE).
+
+**Faithful to BFCL's Claude function-calling path:**
+
+- Same scenarios, user turns, initial API state and ground truth (unmodified).
+- Same tools: docs converted exactly as BFCL's `convert_to_tool` does for Claude
+  (type mapping, float hints, language hint, response schema folded into the
+  description). Verified identical to upstream's output for all 128 tools.
+- No system prompt (BFCL FC mode sends none); results returned as plain
+  `tool_result` blocks without `is_error`, as BFCL does; consecutive user
+  messages combined; `miss_func` functions withheld until their turn, which
+  gets BFCL's "I have updated some more functions" prompt.
+- Same loop: within a user turn the model calls tools until it stops; more than
+  20 tool-calling steps in one turn force-quits the scenario (a failure).
+- Same checker, ported: after each user turn with a non-empty ground truth, the
+  model must have called something (empty-turn check), every public attribute of
+  every API instance must equal the ground-truth replay's (state check), and
+  every ground-truth result must appear among the model's results so far,
+  unordered (response check). The first failing turn fails the scenario.
+  Empty-ground-truth turns are not checked (BFCL's irrelevance checker exists
+  upstream but is never called). Overall accuracy is the unweighted mean of the
+  category accuracies.
+- **Validation:** replaying the ground truth as the model's output passes all
+  800 scenarios on every orchestrator, and targeted mutations (a wrong argument,
+  a dropped read-only call, a silent turn, a runaway loop) each fail for the
+  right reason (`tests/test_bfcl_multi_turn.py`).
+
+**Deliberate divergences:**
+
+- **No `eval()`.** BFCL builds a Python source string from each model call and
+  `eval()`s it, guarded by a short name denylist. orchbench dispatches the
+  structured call to a public method of an involved API instance
+  (`method(**args)`), so argument strings are always data. Result and error
+  strings are formatted exactly as BFCL's. Side effect: BFCL's regex that
+  prefixes method names also rewrites look-alike text inside string arguments
+  (e.g. `"echo(x)"`); orchbench passes such strings through unchanged.
+- **Model settings are ours.** Leaderboard entries use their own per-model
+  settings; orchbench uses `--effort` and adaptive thinking as configured, with
+  prompt caching on. Scores share BFCL's protocol and grading, not necessarily
+  the leaderboard's exact model configuration.
+- **Prompt caching is automatic** (top-level `cache_control`) rather than
+  BFCL's explicit breakpoints; this changes cost, not what the model sees.
+
+
 
 ```bash
 pip install -e ".[anthropic]"

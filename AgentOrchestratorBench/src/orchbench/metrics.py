@@ -156,7 +156,10 @@ class EpisodeReport(BaseModel):
 
     total_tokens: int
     avg_tokens_per_episode: float
-    est_cost_usd: float
+    est_cost_usd: float  # as billed: cache reads/writes at their own rates
+    # The same tokens priced with no prompt caching. Cache-neutral, so it is the
+    # fair cross-orchestrator cost comparison (cache hits depend on run order).
+    est_cost_uncached_usd: float = 0.0
 
     latency_p50_ms: float
     latency_p95_ms: float
@@ -199,6 +202,7 @@ def aggregate_episodes(trajectories: list[Trajectory]) -> EpisodeReport:
         cache_read_tokens=sum(turn.cache_read_tokens for t in trajectories for turn in t.turns),
         cache_write_tokens=sum(turn.cache_write_tokens for t in trajectories for turn in t.turns),
     )
+    est_cost_uncached = estimate_cost_usd(prompt_tokens, completion_tokens, model)
 
     return EpisodeReport(
         orchestrator=trajectories[0].orchestrator,
@@ -212,6 +216,7 @@ def aggregate_episodes(trajectories: list[Trajectory]) -> EpisodeReport:
         total_tokens=total_tokens,
         avg_tokens_per_episode=total_tokens / n,
         est_cost_usd=est_cost,
+        est_cost_uncached_usd=est_cost_uncached,
         latency_p50_ms=_percentile(latencies, 0.50),
         latency_p95_ms=_percentile(latencies, 0.95),
         failure_modes=summarize([FailureMode(t.failure_mode) for t in trajectories]),

@@ -202,8 +202,8 @@ failure modes (stall, no-recovery, wrong-order).
 - **LLM user simulator** — an LLM (via the provider seam) plays the user for
   open-ended follow-ups; gate behind a flag, keep scripted as the default so CI
   stays hermetic.
-- **BFCL `multi_turn` category** ingestion once the backend abstraction is
-  proven.
+- ~~**BFCL `multi_turn` category** ingestion once the backend abstraction is
+  proven.~~ Done in M6 below.
 - **Second provider** (OpenAI/Gemini) — the loop is provider-agnostic by design,
   so this validates the seam under multi-turn too.
 
@@ -235,6 +235,17 @@ M1** so UI and metrics parallelize.
   sample scenarios saturate. Raw trajectories in `docs/runs/`, write-up in
   `RESULTS.md` Part 2. Next: harder scenarios (ambiguity, injected errors,
   longer chains) and multiple interleaved seeds, so frameworks *can* differ.
+
+- **M6 — BFCL multi-turn (main dev). ✅ done.** BFCL v4's four multi-turn
+  categories as a `bfcl` backend: vendored APIs and data, a port of BFCL's
+  per-turn state + response checker, and a loader mirroring BFCL's Claude FC
+  path (tool conversion verified identical for all 128 tools). Prerequisites
+  built along the way: native tool-call history (Anthropic `tool_use` /
+  `tool_result`, thinking blocks replayed), multi-user-turn episodes with
+  per-turn step caps and tools added mid-conversation, prompt caching, and a
+  run harness with cost estimates, checkpoint/resume, and counterbalanced
+  interleaving. Ground-truth replay passes all 800 scenarios on all three
+  orchestrators. Next: the real run.
 
 ## 13. Risks
 

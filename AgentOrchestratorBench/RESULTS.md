@@ -93,8 +93,9 @@ See [`docs/multi-turn.md`](docs/multi-turn.md).
 > multi-turn harness works end to end. They are **not comparable** to the BFCL
 > leaderboard's Multi Turn column (~60–68% for top models), which uses hundreds
 > of scenarios over large stateful APIs, missing-parameter and missing-function
-> cases, and long multi-step chains. Ingesting BFCL's own multi-turn category is
-> the planned next step (see `docs/multi-turn.md` §11).
+> cases, and long multi-step chains. BFCL's own multi-turn categories are now
+> supported (`orchbench episodes --suite bfcl`, see `METHODOLOGY.md` → BFCL
+> multi-turn); that real run is the next result.
 
 ## Run
 

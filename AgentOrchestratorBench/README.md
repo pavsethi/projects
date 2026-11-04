@@ -104,7 +104,30 @@ orchbench compare --provider anthropic --model claude-sonnet-5 \
           --data data/bfcl_simple.jsonl --out results/bfcl_simple.json
 ```
 
-## Architecture
+## BFCL multi-turn
+
+BFCL v4's four multi-turn categories (800 scenarios over stateful file-system,
+messaging, trading, travel and vehicle APIs) run through all three
+orchestrators, graded with a port of BFCL's own per-turn checker. Data and APIs
+are vendored (Apache-2.0), so no download is needed. See `METHODOLOGY.md` →
+BFCL multi-turn for what is faithful to BFCL and where it deliberately differs.
+
+```bash
+orchbench episodes --suite bfcl --category all          # free: replays ground truth (mock)
+orchbench episodes --suite bfcl --category base --limit 50 \
+          --model claude-sonnet-5 --estimate            # cost estimate, no API calls
+orchbench episodes --suite bfcl --category base --limit 50 \
+          --provider anthropic --model claude-sonnet-5 --effort low \
+          --out results/bfcl_mt_base50.json             # real run (asks before spending)
+```
+
+Real runs print a cost estimate and ask for confirmation above $1 (`--yes` skips
+it), checkpoint every finished episode to `<out>.partial.jsonl` (`--resume`
+continues after a crash without paying twice), and run orchestrators
+interleaved and counterbalanced per scenario. Output prints BFCL-style accuracy
+per category plus the unweighted overall.
+
+
 
 ```
              ┌──────────────┐     one async seam every backend speaks
@@ -157,4 +180,5 @@ run against real BFCL.
 
 ## License
 
-MIT.
+MIT. Vendored BFCL code and data (`src/orchbench/vendor/bfcl_multi_turn/`,
+`data/bfcl_multi_turn/`) are Apache-2.0; see the LICENSE and NOTICE files there.

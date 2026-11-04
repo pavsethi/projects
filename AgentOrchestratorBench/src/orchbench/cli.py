@@ -39,7 +39,7 @@ from orchbench.providers.retry import RetryProvider
 from orchbench.runner import Runner
 from orchbench.suites.bfcl import load_bfcl_native, load_jsonl
 from orchbench.suites.multiturn import load_scenarios
-from orchbench.types import RunResult, Trajectory
+from orchbench.types import RunResult, Scenario, Trajectory
 
 if TYPE_CHECKING:
     from orchbench.orchestrators.base import EpisodeOrchestrator
@@ -365,7 +365,10 @@ def _print_episode_report(report: EpisodeReport, label: str) -> None:
     typer.echo(f"  recovery rate     : {_fmt_pct(report.recovery_rate)}")
     typer.echo(f"  invalid-call rate : {_fmt_pct(report.invalid_call_rate)}")
     typer.echo(f"  tokens/episode    : {report.avg_tokens_per_episode:8.1f}")
-    typer.echo(f"  est. cost (USD)   : ${report.est_cost_usd:.4f}")
+    typer.echo(
+        f"  est. cost (USD)   : ${report.est_cost_usd:.4f} billed, "
+        f"${report.est_cost_uncached_usd:.4f} uncached"
+    )
     typer.echo(
         f"  latency ms        : p50={report.latency_p50_ms:6.0f} p95={report.latency_p95_ms:6.0f}"
     )
@@ -376,28 +379,118 @@ def _print_episode_report(report: EpisodeReport, label: str) -> None:
             typer.echo(f"    {mode:20s} {count}")
 
 
+def _load_episode_scenarios(
+    suite: str, data: Path, category: str, limit: int | None
+) -> list[Scenario]:
+    if suite == "records":
+        scenarios = load_scenarios(data)
+        return scenarios[:limit] if limit is not None else scenarios
+    if suite == "bfcl":
+        from orchbench.suites.bfcl_multi_turn import CATEGORIES, load_bfcl_multi_turn
+
+        cats = list(CATEGORIES) if category == "all" else [c.strip() for c in category.split(",")]
+        out: list[Scenario] = []
+        for cat in cats:
+            out.extend(load_bfcl_multi_turn(cat, limit=limit))
+        return out
+    raise typer.BadParameter(f"unknown suite {suite!r}; use 'records' or 'bfcl'")
+
+
+def _print_category_table(trajectories: list[Trajectory], names: list[str]) -> None:
+    """BFCL-style accuracy: per category, and overall = unweighted category mean."""
+    cats = sorted({t.category for t in trajectories})
+    typer.echo("\n" + "=" * 78)
+    typer.echo("ACCURACY BY CATEGORY (overall = mean of categories, as BFCL reports it)")
+    typer.echo("=" * 78)
+    typer.echo(
+        f"{'orchestrator':16s}" + "".join(f"{c[:14]:>15s}" for c in cats) + f"{'overall':>10s}"
+    )
+    for name in names:
+        accs = []
+        row = f"{name:16s}"
+        for cat in cats:
+            ts = [t for t in trajectories if t.orchestrator == name and t.category == cat]
+            acc = sum(t.succeeded for t in ts) / len(ts) if ts else 0.0
+            accs.append(acc)
+            row += f"{_fmt_pct(acc):>9s} ({len(ts):>3d})"
+        row += f"{_fmt_pct(sum(accs) / len(accs) if accs else 0.0):>10s}"
+        typer.echo(row)
+
+
 @app.command()
 def episodes(
-    data: Path = typer.Option(_MT_SAMPLE, help="Scenario dataset (JSONL)."),
+    suite: str = typer.Option("records", help="Scenario suite: 'records' (sample) or 'bfcl'."),
+    data: Path = typer.Option(_MT_SAMPLE, help="Scenario dataset (JSONL) for --suite records."),
+    category: str = typer.Option(
+        "base", help="BFCL categories: base, miss_func, miss_param, long_context, or 'all'."
+    ),
+    limit: int | None = typer.Option(None, help="Max scenarios (per category for bfcl)."),
+    orchestrators: str | None = typer.Option(
+        None, help="Comma-separated orchestrators (default: every available one)."
+    ),
     provider: str = typer.Option("mock", help="Provider: 'mock' or 'anthropic'."),
     model: str = typer.Option("mock-model", help="Model id (recorded and priced)."),
     concurrency: int = typer.Option(8, help="Max concurrent episodes."),
     thinking: bool = typer.Option(True, help="Adaptive thinking (real providers)."),
     effort: str | None = typer.Option(None, help="Effort: low|medium|high|xhigh|max."),
+    prompt_cache: bool = typer.Option(True, help="Anthropic prompt caching (cuts cost)."),
+    estimate: bool = typer.Option(False, help="Print a cost estimate and exit (no API calls)."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the cost confirmation prompt."),
     out: Path | None = typer.Option(None, help="Write all trajectories JSON here."),
+    resume: bool = typer.Option(
+        False, help="Skip (orchestrator, scenario) pairs already in <out>.partial.jsonl."
+    ),
 ) -> None:
     """Run multi-turn scenarios through every episode-capable orchestrator.
 
-    On the mock provider this uses each backend's oracle plan to drive a correct
-    episode end-to-end with no API keys.
+    On the mock provider this replays each backend's oracle plan (for BFCL, the
+    ground truth) end-to-end with no API keys. Orchestrators run interleaved per
+    scenario so latency isn't confounded by API load drifting over the run.
     """
+    scenarios = _load_episode_scenarios(suite, data, category, limit)
+    available = [
+        n for n in available_orchestrators() if hasattr(get_orchestrator(n), "run_episode")
+    ]
+    names = [n.strip() for n in orchestrators.split(",")] if orchestrators else available
+    unknown = [n for n in names if n not in available]
+    if unknown:
+        raise typer.BadParameter(f"unavailable orchestrators {unknown}; have {available}")
+
+    if estimate or provider != "mock":
+        from orchbench.estimate import estimate_run
+
+        priced_model = model if provider != "mock" else "claude-sonnet-5"
+        est = estimate_run(scenarios, priced_model, len(names))
+        typer.echo(
+            f"Estimate for {est.scenarios} scenarios x {est.orchestrators} orchestrators "
+            f"on {priced_model}: ~{est.oracle_steps} model steps at ground-truth length.\n"
+            f"  with prompt caching : ${est.low_usd:,.2f} - ${est.high_usd:,.2f}\n"
+            f"  without caching     : up to ${est.high_usd_no_cache:,.2f}\n"
+            "  (rough: token counts approximated from request size; +/-50%)"
+        )
+        if estimate:
+            return
+        if est.high_usd > 1.0 and not yes:
+            typer.confirm("Proceed with the real run?", abort=True)
+
     _require_key(provider)
-    scenarios = load_scenarios(data)
-    names = [n for n in available_orchestrators() if hasattr(get_orchestrator(n), "run_episode")]
-    typer.echo(f"Multi-turn: {', '.join(names)}  (provider={provider}, {len(scenarios)} scenarios)")
-    runner = Runner(concurrency=concurrency)
-    comparison: list[tuple[str, EpisodeReport]] = []
-    all_trajectories: list[Trajectory] = []
+    partial = out.with_suffix(".partial.jsonl") if out is not None else None
+    done: set[tuple[str, str]] = set()
+    prior: list[Trajectory] = []
+    if resume and partial is not None and partial.exists():
+        for line in partial.read_text().splitlines():
+            if line.strip():
+                t = Trajectory.model_validate_json(line)
+                prior.append(t)
+                done.add((t.orchestrator, t.scenario_id))
+        typer.echo(f"Resuming: {len(done)} trajectories already in {partial}")
+    elif partial is not None and partial.exists():
+        partial.unlink()
+
+    typer.echo(
+        f"Multi-turn: {', '.join(names)}  (suite={suite}, provider={provider}, "
+        f"{len(scenarios)} scenarios)"
+    )
 
     def make_provider() -> LLMProvider:
         if provider == "mock":
@@ -408,42 +501,68 @@ def episodes(
         if provider == "anthropic":
             from orchbench.providers.anthropic import AnthropicProvider
 
-            base: LLMProvider = AnthropicProvider(model=model, thinking=thinking, effort=effort)
+            base: LLMProvider = AnthropicProvider(
+                model=model, thinking=thinking, effort=effort, prompt_cache=prompt_cache
+            )
             return RetryProvider(base, max_retries=3)
         raise typer.BadParameter(f"unknown provider {provider!r}")
 
-    async def go() -> None:
-        for name in names:
-            orch = cast("EpisodeOrchestrator", get_orchestrator(name, model=model))
-            trajectories = await runner.run_episodes(orch, scenarios, make_provider())
-            report = aggregate_episodes(trajectories)
-            _print_episode_report(report, label=f"{name}/{model}")
-            comparison.append((name, report))
-            all_trajectories.extend(trajectories)
+    shared = make_provider()
+    orchs = [cast("EpisodeOrchestrator", get_orchestrator(n, model=model)) for n in names]
 
-    asyncio.run(go())
+    def checkpoint(traj: Trajectory) -> None:
+        if partial is not None:
+            partial.parent.mkdir(parents=True, exist_ok=True)
+            with partial.open("a", encoding="utf-8") as fh:
+                fh.write(traj.model_dump_json() + "\n")
+
+    new = asyncio.run(
+        Runner(concurrency=concurrency).run_matrix(
+            orchs, scenarios, lambda _name: shared, skip=done, on_result=checkpoint
+        )
+    )
+    all_trajectories = prior + list(new)
+
+    comparison: list[tuple[str, EpisodeReport]] = []
+    for name in names:
+        mine = [t for t in all_trajectories if t.orchestrator == name]
+        if not mine:
+            continue
+        report = aggregate_episodes(mine)
+        _print_episode_report(report, label=f"{name}/{model}")
+        comparison.append((name, report))
 
     if len(comparison) > 1:
         typer.echo("\n" + "=" * 78)
         typer.echo("MULTI-TURN COMPARISON")
         typer.echo("=" * 78)
-        header = f"{'config':22s} {'success':>8s} {'recover':>8s} {'tok/ep':>9s} {'p95 ms':>8s}"
+        header = (
+            f"{'config':22s} {'success':>8s} {'recover':>8s} {'tok/ep':>9s} "
+            f"{'$ uncached':>11s} {'p95 ms':>8s}"
+        )
         typer.echo(header)
         typer.echo("-" * 78)
         for label, r in comparison:
             typer.echo(
                 f"{label:22s} {_fmt_pct(r.success_rate):>8s} {_fmt_pct(r.recovery_rate):>8s} "
-                f"{r.avg_tokens_per_episode:9.1f} {r.latency_p95_ms:8.0f}"
+                f"{r.avg_tokens_per_episode:9.1f} {r.est_cost_uncached_usd:11.4f} "
+                f"{r.latency_p95_ms:8.0f}"
             )
+    if suite == "bfcl":
+        _print_category_table(all_trajectories, [n for n, _ in comparison])
 
     if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "meta": {
                 "command": "episodes",
+                "suite": suite,
+                "category": category if suite == "bfcl" else None,
                 "provider": provider,
                 "model": model,
-                "data": str(data),
+                "effort": effort,
+                "prompt_cache": prompt_cache,
+                "data": str(data) if suite == "records" else "data/bfcl_multi_turn",
             },
             "trajectories": [t.model_dump() for t in all_trajectories],
         }
