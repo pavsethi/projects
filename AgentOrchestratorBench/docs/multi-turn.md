@@ -212,11 +212,19 @@ failure modes (stall, no-recovery, wrong-order).
 Dependency that gates everything: **freeze the `Trajectory` / results schema in
 M1** so UI and metrics parallelize.
 
-- **M1 — engine (main dev).** Types, `ToolBackend` + one reference backend,
-  `run_episode` contract, hand-rolled loop, goal-state grader, scripted mock
-  profile, sample scenarios, conformance test. *Output: frozen trajectory schema.*
-- **M2 — framework loops (main dev + eng).** LangGraph graph loop; Agent
-  Framework function-invocation loop. Both over the shared backend/provider.
+- **M1 — engine (main dev). ✅ done.** Types, `ToolBackend` + `records` backend,
+  `run_episode` contract, hand-rolled loop (now the shared `episode.drive_episode`
+  driver), goal-state grader, scripted mock profile, sample scenarios, tests.
+  *Output: frozen trajectory schema.*
+- **M2 — framework loops (main dev). ✅ done.** LangGraph runs a **real graph**
+  (agent/tools nodes + conditional edge; the node reads `turn_index` from graph
+  state and stamps it into the request, so the shared provider is driven exactly
+  as elsewhere). Agent Framework reuses its native per-turn chat-client machinery
+  inside the shared driver — its *own* multi-step loop builds requests internally,
+  which would bypass the per-turn provider instrumentation (and the mock's turn
+  keying), so, as for the single-step router, we drive the turn loop. `orchbench
+  episodes` compares all three; v0.2 is one instruction + autonomous tool loop
+  (multi-turn *tool use*), user-simulator conversations remain v0.3.
 - **M3 — metrics & taxonomy (eng).** New metrics + failure modes + per-category
   rollups; depends on M1 schema.
 - **M4 — UI / trajectory explorer (eng, parallel after M1).** Static report from

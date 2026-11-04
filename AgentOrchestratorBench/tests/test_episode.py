@@ -1,6 +1,9 @@
 """Multi-turn engine tests: backend, episode loop, grading, metrics."""
 
+import importlib.util
 import pathlib
+
+import pytest
 
 from orchbench.backends import default_tools, get_backend, oracle_plan
 from orchbench.metrics import aggregate_episodes
@@ -144,3 +147,52 @@ def test_loader_fills_tools_from_backend():
     assert len(scenarios) >= 4
     # tools omitted in the file are filled from the records backend defaults.
     assert all(any(t.name == "update_record" for t in s.tools) for s in scenarios)
+
+
+# -------------------- M2: all episode orchestrators (framework loops) -------- #
+
+
+def _episode_orchestrators():
+    """Instantiated episode-capable orchestrators available in this env."""
+    from orchbench.orchestrators.handrolled import HandRolledOrchestrator as HR
+
+    orchs = [HR(model="mock-model")]
+    if importlib.util.find_spec("langgraph"):
+        from orchbench.orchestrators.langgraph_adapter import LangGraphOrchestrator as LG
+
+        orchs.append(LG(model="mock-model"))
+    if importlib.util.find_spec("agent_framework"):
+        from orchbench.orchestrators.agentframework_adapter import AgentFrameworkOrchestrator as AF
+
+        orchs.append(AF(model="mock-model"))
+    return orchs
+
+
+@pytest.mark.parametrize("orch", _episode_orchestrators(), ids=lambda o: o.name)
+async def test_every_episode_orchestrator_succeeds_on_oracle(orch):
+    scenarios = load_scenarios(SAMPLE)
+    fixtures = {}
+    for s in scenarios:
+        fixtures.update(build_episode_fixtures(s.id, oracle_plan(s)))
+    provider = MockProvider(fixtures)
+    trajectories = await Runner().run_episodes(orch, scenarios, provider)
+    assert all(t.succeeded for t in trajectories), orch.name
+    assert all(t.orchestrator == orch.name for t in trajectories)
+    # search -> update -> goal is two turns for every orchestrator (parity).
+    assert all(t.turns_to_success == 2 for t in trajectories), orch.name
+
+
+@pytest.mark.parametrize("orch", _episode_orchestrators(), ids=lambda o: o.name)
+async def test_every_episode_orchestrator_captures_provider_error(orch):
+    s = _records_scenario()
+
+    class _Boom:
+        name = "boom"
+
+        async def complete(self, request: LLMRequest) -> ModelResponse:
+            return ModelResponse(error="503 overloaded")
+
+    traj = await orch.run_episode(s, _Boom(), get_backend("records"))
+    assert isinstance(traj, Trajectory)
+    assert traj.stop_reason == "provider_error"
+    assert traj.failure_mode == FailureMode.PROVIDER_ERROR

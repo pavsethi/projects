@@ -17,14 +17,8 @@ import json
 import re
 
 from orchbench.backends.base import ToolBackend
-from orchbench.failures import classify_trajectory
-from orchbench.orchestrators.prompt import (
-    build_episode_messages,
-    build_routing_messages,
-    calls_to_text,
-    results_to_text,
-    tool_to_schema,
-)
+from orchbench.episode import StepResult, drive_episode
+from orchbench.orchestrators.prompt import build_routing_messages, tool_to_schema
 from orchbench.providers.base import LLMProvider
 from orchbench.types import (
     LLMRequest,
@@ -33,7 +27,6 @@ from orchbench.types import (
     Scenario,
     Task,
     Trajectory,
-    TurnRecord,
 )
 
 # Matches the first JSON array or object in a block of text (fallback parsing).
@@ -128,87 +121,33 @@ class HandRolledOrchestrator:
     async def run_episode(
         self, scenario: Scenario, provider: LLMProvider, backend: ToolBackend
     ) -> Trajectory:
-        """The reference multi-turn loop: an explicit model -> tools -> model cycle."""
-        backend.reset(scenario.initial_state)
-        messages = build_episode_messages(scenario)
-        tools = [tool_to_schema(t) for t in scenario.tools]
-        pending_user = list(scenario.user_turns[1:])  # first turn is in the opening messages
+        """The reference multi-turn loop (the shared driver, with a plain provider call)."""
 
-        turns: list[TurnRecord] = []
-        stop_reason = "max_turns"
-        had_error = False
-        recovered = False
-
-        for turn_index in range(scenario.max_turns):
-            request = LLMRequest(
-                model=self.model,
-                messages=messages,
-                tools=tools,
-                metadata={"task_id": scenario.id, "turn": turn_index},
+        async def step(messages: list[dict], tools: list[dict], turn_index: int) -> StepResult:
+            response = await provider.complete(
+                LLMRequest(
+                    model=self.model,
+                    messages=messages,
+                    tools=tools,
+                    metadata={"task_id": scenario.id, "turn": turn_index},
+                )
             )
-            response = await provider.complete(request)
-            rec = TurnRecord(
-                index=turn_index,
+            predicted = response.tool_calls or _parse_text_fallback(response.text)
+            return StepResult(
+                predicted=predicted,
                 text=response.text,
                 prompt_tokens=response.prompt_tokens,
                 completion_tokens=response.completion_tokens,
                 latency_ms=response.latency_ms,
+                error=response.error,
             )
 
-            if response.error is not None:
-                rec.error = response.error
-                turns.append(rec)
-                stop_reason = "provider_error"
-                break
-
-            calls = response.tool_calls or _parse_text_fallback(response.text)
-            rec.predicted = calls
-
-            if not calls:
-                turns.append(rec)
-                if pending_user:  # model paused; deliver the next scripted user turn
-                    messages = [
-                        *messages,
-                        {"role": "assistant", "content": response.text},
-                        {"role": "user", "content": pending_user.pop(0)},
-                    ]
-                    continue
-                stop_reason = "no_call"
-                break
-
-            results = [backend.execute(c) for c in calls]
-            rec.results = results
-            rec.state_snapshot = backend.state()
-            turns.append(rec)
-
-            if any(not r.ok for r in results):
-                had_error = True
-            elif had_error:
-                recovered = True
-
-            messages = [
-                *messages,
-                {"role": "assistant", "content": calls_to_text(calls)},
-                {"role": "user", "content": results_to_text(results)},
-            ]
-
-            if backend.goal_reached(scenario.goal):
-                stop_reason = "goal"
-                break
-
-        succeeded = backend.goal_reached(scenario.goal)
-        traj = Trajectory(
-            scenario_id=scenario.id,
-            suite=scenario.suite,
-            category=scenario.category,
-            orchestrator=self.name,
-            provider=getattr(provider, "name", "provider"),
+        return await drive_episode(
+            scenario,
+            backend,
+            name=self.name,
             model=self.model,
-            turns=turns,
-            succeeded=succeeded,
-            stop_reason="goal" if succeeded else stop_reason,
-            turns_to_success=len(turns) if succeeded else None,
-            final_state=backend.state(),
+            provider_name=getattr(provider, "name", "provider"),
+            step=step,
+            tools=[tool_to_schema(t) for t in scenario.tools],
         )
-        traj.failure_mode = classify_trajectory(traj, had_error=had_error, recovered=recovered)
-        return traj
