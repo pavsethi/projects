@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, cast
 import typer
 
 from orchbench.backends import oracle_plan
+from orchbench.env import load_dotenv, missing_key
 from orchbench.metrics import EpisodeReport, SuiteReport, aggregate, aggregate_episodes
 from orchbench.orchestrators import (
     ALL_NAMES,
@@ -47,6 +48,29 @@ app = typer.Typer(add_completion=False, help="A reproducible eval harness for ag
 
 _SAMPLE = Path(__file__).resolve().parents[2] / "data" / "bfcl_sample.jsonl"
 _MT_SAMPLE = Path(__file__).resolve().parents[2] / "data" / "multiturn_sample.jsonl"
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+@app.callback()
+def _load_env() -> None:
+    """Load a gitignored ``.env`` (cwd, then project root); exported vars win."""
+    for path in dict.fromkeys([Path.cwd() / ".env", _PROJECT_ROOT / ".env"]):
+        load_dotenv(path)
+
+
+def _require_key(provider: str) -> None:
+    """Refuse to start a real-provider run with no credentials."""
+    var = missing_key(provider)
+    if var is None:
+        return
+    typer.echo(
+        f"error: {var} is not set, so every call would fail authentication.\n"
+        f"  Set it in this shell:   export {var}=...   "
+        f'(PowerShell: $env:{var} = "...")\n'
+        f"  or put  {var}=...  in a .env file in {Path.cwd()}",
+        err=True,
+    )
+    raise typer.Exit(code=2)
 
 
 def _fmt_pct(x: float) -> str:
@@ -156,6 +180,7 @@ def _build_provider(
     if provider == "mock":
         return MockProvider(build_fixtures(tasks, profile, seed=seed))
     if provider == "anthropic":
+        _require_key(provider)
         from orchbench.providers.anthropic import AnthropicProvider
 
         base: LLMProvider = AnthropicProvider(model=model, thinking=thinking, effort=effort)
@@ -365,6 +390,7 @@ def episodes(
     On the mock provider this uses each backend's oracle plan to drive a correct
     episode end-to-end with no API keys.
     """
+    _require_key(provider)
     scenarios = load_scenarios(data)
     names = [n for n in available_orchestrators() if hasattr(get_orchestrator(n), "run_episode")]
     typer.echo(f"Multi-turn: {', '.join(names)}  (provider={provider}, {len(scenarios)} scenarios)")

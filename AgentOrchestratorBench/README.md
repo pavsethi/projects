@@ -70,6 +70,10 @@ orchbench run --provider anthropic --model claude-sonnet-5 \
 orchbench report results/sonnet.json
 ```
 
+The key can also live in a gitignored `.env` file (`ANTHROPIC_API_KEY=...`) in the
+working directory; a variable you've exported takes precedence. A real-provider run
+with no key exits immediately instead of recording every call as a provider error.
+
 Point `--data` at the real [BFCL](https://gorilla.cs.berkeley.edu/leaderboard.html)
 dataset via the native loader (see `METHODOLOGY.md`) for a full run. Real-provider
 runs are wrapped in `RetryProvider` (transient 429/5xx) + `CachingProvider`
