@@ -15,14 +15,21 @@ from pydantic import BaseModel, Field
 from orchbench.failures import summarize
 from orchbench.types import FailureMode, RunResult, Trajectory
 
-# Illustrative pricing, USD per 1M tokens (input, output). Edit for real models;
-# "mock-model" is priced so the demo shows a non-zero, comparable cost column.
+# USD per 1M tokens (input, output), Anthropic first-party list prices as of
+# 2026-11. "mock-model" is priced so the demo shows a non-zero cost column.
 PRICING: dict[str, tuple[float, float]] = {
     "mock-model": (3.0, 15.0),
-    "claude-sonnet-5": (3.0, 15.0),
-    "claude-opus-5": (15.0, 75.0),
+    "claude-sonnet-5": (2.0, 10.0),
+    "claude-sonnet-5-5": (2.0, 10.0),
+    "claude-opus-5": (5.0, 25.0),
+    "claude-opus-5-5": (4.0, 20.0),
+    "claude-haiku-5-5": (0.10, 0.50),
     "claude-haiku-4-5": (1.0, 5.0),
 }
+
+# Prompt-cache multipliers on the input price (5-minute cache).
+CACHE_READ_MULT = 0.1
+CACHE_WRITE_MULT = 1.25
 
 
 def _percentile(values: list[float], pct: float) -> float:
@@ -35,9 +42,22 @@ def _percentile(values: list[float], pct: float) -> float:
     return ordered[lo] + (ordered[hi] - ordered[lo]) * (k - lo)
 
 
-def estimate_cost_usd(prompt_tokens: int, completion_tokens: int, model: str) -> float:
+def estimate_cost_usd(
+    prompt_tokens: int,
+    completion_tokens: int,
+    model: str,
+    *,
+    cache_read_tokens: int = 0,
+    cache_write_tokens: int = 0,
+) -> float:
+    """List-price cost. ``prompt_tokens`` is the whole prompt; the cache counts
+    are the parts of it billed at cache-read / cache-write rates."""
     in_price, out_price = PRICING.get(model, (0.0, 0.0))
-    return (prompt_tokens / 1_000_000) * in_price + (completion_tokens / 1_000_000) * out_price
+    uncached = prompt_tokens - cache_read_tokens - cache_write_tokens
+    input_cost = (
+        uncached + cache_read_tokens * CACHE_READ_MULT + cache_write_tokens * CACHE_WRITE_MULT
+    ) * in_price
+    return (input_cost + completion_tokens * out_price) / 1_000_000
 
 
 class CategoryMetrics(BaseModel):
@@ -172,7 +192,13 @@ def aggregate_episodes(trajectories: list[Trajectory]) -> EpisodeReport:
     # Approximate input/output split per episode as prompt vs completion sums.
     prompt_tokens = sum(turn.prompt_tokens for t in trajectories for turn in t.turns)
     completion_tokens = sum(turn.completion_tokens for t in trajectories for turn in t.turns)
-    est_cost = estimate_cost_usd(prompt_tokens, completion_tokens, model)
+    est_cost = estimate_cost_usd(
+        prompt_tokens,
+        completion_tokens,
+        model,
+        cache_read_tokens=sum(turn.cache_read_tokens for t in trajectories for turn in t.turns),
+        cache_write_tokens=sum(turn.cache_write_tokens for t in trajectories for turn in t.turns),
+    )
 
     return EpisodeReport(
         orchestrator=trajectories[0].orchestrator,

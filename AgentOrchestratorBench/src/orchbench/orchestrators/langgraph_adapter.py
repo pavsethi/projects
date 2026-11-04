@@ -18,13 +18,15 @@ from __future__ import annotations
 from typing import Any, TypedDict
 
 from orchbench.backends.base import ToolBackend
-from orchbench.failures import classify_trajectory
+from orchbench.episode import StepResult, finish_trajectory, tools_for_turn, turn_record
 from orchbench.orchestrators.prompt import (
-    build_episode_messages,
+    assign_call_ids,
+    assistant_message,
     build_routing_messages,
-    calls_to_text,
-    results_to_text,
+    episode_opening,
+    tool_results_message,
     tool_to_schema,
+    user_message,
 )
 from orchbench.providers.base import LLMProvider
 from orchbench.types import (
@@ -46,16 +48,18 @@ class _State(TypedDict, total=False):
 
 
 class _EpisodeState(TypedDict, total=False):
-    """State carried around the multi-turn graph loop."""
+    """State carried around the multi-turn graph (and across user turns)."""
 
     messages: list[dict]
-    turn_index: int
+    tools: list[dict]
+    user_turn: int
+    step_index: int
+    calling_steps: int  # tool-calling steps within the current user turn
     turns: list[TurnRecord]
     last_calls: list[PredictedCall]
-    stop_reason: str
     had_error: bool
     recovered: bool
-    done: bool
+    ended: str  # "" while running; else how the current user turn ended
 
 
 def _require_langgraph() -> None:
@@ -122,49 +126,44 @@ class LangGraphOrchestrator:
     async def run_episode(
         self, scenario: Scenario, provider: LLMProvider, backend: ToolBackend
     ) -> Trajectory:
-        """Run the episode as a real LangGraph graph: agent <-> tools until done.
+        """Run the episode as a real LangGraph graph: agent <-> tools per user turn.
 
-        Unlike the shared driver, LangGraph owns the control flow here -- an
-        ``agent`` node and a ``tools`` node with a conditional edge that loops
-        until the model stops calling tools, the goal is reached, or ``max_turns``
-        is hit. The agent node reads ``turn_index`` from graph state and stamps it
-        into the request metadata, so the shared (mock or real) provider is driven
-        exactly as for every other orchestrator -- the loop is what differs.
+        LangGraph owns the control flow within a user turn -- an ``agent`` node
+        and a ``tools`` node joined by conditional edges, looping until the model
+        stops calling tools, the goal is reached, or the per-turn step cap is
+        hit. Each scripted user turn is one graph invocation over the carried
+        state (how a LangGraph chat app handles a new user message). The agent
+        node stamps ``step_index`` from graph state into the request metadata, so
+        the shared provider is driven exactly as for the other orchestrators.
         """
         from langgraph.graph import END, START, StateGraph
 
         backend.reset(scenario.initial_state)
-        tools = [tool_to_schema(t) for t in scenario.tools]
-        opening = build_episode_messages(scenario)
+        base_tools = [tool_to_schema(t) for t in scenario.tools]
 
         async def agent(state: _EpisodeState) -> dict:
-            ti = state["turn_index"]
+            si, ut = state["step_index"], state["user_turn"]
             response = await provider.complete(
                 LLMRequest(
                     model=self.model,
                     messages=state["messages"],
-                    tools=tools,
-                    metadata={"task_id": scenario.id, "turn": ti},
+                    tools=state["tools"],
+                    metadata={"task_id": scenario.id, "turn": si},
                 )
             )
-            rec = TurnRecord(
-                index=ti,
-                text=response.text,
-                predicted=list(response.tool_calls),
-                prompt_tokens=response.prompt_tokens,
-                completion_tokens=response.completion_tokens,
-                latency_ms=response.latency_ms,
-            )
-            if response.error is not None:
-                rec.error = response.error
-                return {
-                    "turns": [*state["turns"], rec],
-                    "done": True,
-                    "stop_reason": "provider_error",
-                }
-            if not response.tool_calls:
-                return {"turns": [*state["turns"], rec], "done": True, "stop_reason": "no_call"}
-            return {"turns": [*state["turns"], rec], "last_calls": list(response.tool_calls)}
+            sr = StepResult.from_response(response, list(response.tool_calls))
+            sr.predicted = assign_call_ids(sr.predicted, si)
+            rec = turn_record(sr, si, ut)
+            update: dict = {"turns": [*state["turns"], rec], "step_index": si + 1}
+            if sr.error is not None:
+                return {**update, "ended": "provider_error"}
+            update["messages"] = [
+                *state["messages"],
+                assistant_message(sr.text, sr.predicted, sr.native),
+            ]
+            if not sr.predicted:
+                return {**update, "ended": "no_call"}
+            return {**update, "last_calls": sr.predicted}
 
         def tools_node(state: _EpisodeState) -> dict:
             calls = state["last_calls"]
@@ -172,73 +171,72 @@ class LangGraphOrchestrator:
             rec = state["turns"][-1].model_copy(
                 update={"results": results, "state_snapshot": backend.state()}
             )
-            turns = [*state["turns"][:-1], rec]
-            had_error = state.get("had_error", False)
-            recovered = state.get("recovered", False)
+            had_error = state["had_error"]
+            recovered = state["recovered"]
             if any(not r.ok for r in results):
                 had_error = True
             elif had_error:
                 recovered = True
-            messages = [
-                *state["messages"],
-                {"role": "assistant", "content": calls_to_text(calls)},
-                {"role": "user", "content": results_to_text(results)},
-            ]
-            ti = state["turn_index"] + 1
-            done = backend.goal_reached(scenario.goal) or ti >= scenario.max_turns
-            stop = "goal" if backend.goal_reached(scenario.goal) else "max_turns"
+            calling_steps = state["calling_steps"] + 1
+            ended = ""
+            if backend.goal_reached(scenario.goal):
+                ended = "goal"
+            elif calling_steps >= scenario.max_turns:
+                ended = "max_turns"
             return {
-                "turns": turns,
-                "messages": messages,
-                "turn_index": ti,
+                "turns": [*state["turns"][:-1], rec],
+                "messages": [*state["messages"], tool_results_message(calls, results)],
+                "calling_steps": calling_steps,
                 "had_error": had_error,
                 "recovered": recovered,
-                "done": done,
-                "stop_reason": stop if done else "",
+                "ended": ended,
             }
 
-        def after_agent(state: _EpisodeState) -> str:
-            return END if state.get("done") else "tools"
-
-        def after_tools(state: _EpisodeState) -> str:
-            return END if state.get("done") else "agent"
+        def route(state: _EpisodeState) -> str:
+            return END if state["ended"] else "next"
 
         graph: Any = StateGraph(_EpisodeState)
         graph.add_node("agent", agent)
         graph.add_node("tools", tools_node)
         graph.add_edge(START, "agent")
-        graph.add_conditional_edges("agent", after_agent, {"tools": "tools", END: END})
-        graph.add_conditional_edges("tools", after_tools, {"agent": "agent", END: END})
+        graph.add_conditional_edges("agent", route, {"next": "tools", END: END})
+        graph.add_conditional_edges("tools", route, {"next": "agent", END: END})
         app = graph.compile()
 
-        init: _EpisodeState = {
-            "messages": opening,
-            "turn_index": 0,
+        state: _EpisodeState = {
+            "messages": episode_opening(scenario),
+            "step_index": 0,
             "turns": [],
             "last_calls": [],
             "had_error": False,
             "recovered": False,
-            "done": False,
-            "stop_reason": "max_turns",
         }
-        final = await app.ainvoke(init, config={"recursion_limit": scenario.max_turns * 2 + 4})
+        stop_reason = "no_call"
+        for user_turn, text in enumerate(scenario.user_turns):
+            state = {
+                **state,
+                "messages": [*state["messages"], user_message(text)],
+                "tools": tools_for_turn(scenario, base_tools, user_turn),
+                "user_turn": user_turn,
+                "calling_steps": 0,
+                "ended": "",
+            }
+            state = await app.ainvoke(state, config={"recursion_limit": scenario.max_turns * 2 + 6})
+            stop_reason = state["ended"]
+            if stop_reason in ("provider_error", "max_turns"):
+                break
+            backend.end_user_turn(user_turn)
+            if stop_reason == "goal":
+                break
 
-        succeeded = backend.goal_reached(scenario.goal)
-        turns = final["turns"]
-        traj = Trajectory(
-            scenario_id=scenario.id,
-            suite=scenario.suite,
-            category=scenario.category,
-            orchestrator=self.name,
-            provider=getattr(provider, "name", "provider"),
+        return finish_trajectory(
+            scenario,
+            backend,
+            name=self.name,
             model=self.model,
-            turns=turns,
-            succeeded=succeeded,
-            stop_reason="goal" if succeeded else final.get("stop_reason", "max_turns"),
-            turns_to_success=len(turns) if succeeded else None,
-            final_state=backend.state(),
+            provider_name=getattr(provider, "name", "provider"),
+            turns=state["turns"],
+            stop_reason=stop_reason,
+            had_error=state["had_error"],
+            recovered=state["recovered"],
         )
-        traj.failure_mode = classify_trajectory(
-            traj, had_error=final.get("had_error", False), recovered=final.get("recovered", False)
-        )
-        return traj

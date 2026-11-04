@@ -27,6 +27,7 @@ class AnthropicProvider:
         api_key: str | None = None,
         thinking: bool = True,
         effort: str | None = None,
+        prompt_cache: bool = True,
     ) -> None:
         try:
             from anthropic import AsyncAnthropic
@@ -41,6 +42,10 @@ class AnthropicProvider:
         # via output_config; None leaves the server default.
         self.thinking = thinking
         self.effort = effort
+        # Top-level automatic prompt caching: each multi-step request re-sends
+        # the same tools + growing history, so caching the prefix cuts the bill
+        # sharply on long episodes (BFCL's own Claude handler caches too).
+        self.prompt_cache = prompt_cache
         self._client = AsyncAnthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
 
     @staticmethod
@@ -58,21 +63,68 @@ class AnthropicProvider:
         return out
 
     @staticmethod
-    def _split_system(messages: list[dict]) -> tuple[str, list[dict]]:
-        """Lift ``role: system`` turns into the top-level ``system`` string.
+    def _to_anthropic_messages(messages: list[dict]) -> tuple[str, list[dict]]:
+        """Map orchbench's provider-agnostic history to Messages API shape.
 
-        Our internal message format lets orchestrators put a system prompt in the
-        messages list, but the Messages API takes ``system`` as a top-level
-        parameter (a leading ``role: system`` message is rejected). Concatenate
-        any system turns and pass the rest through unchanged.
+        - ``system`` turns are lifted to the top-level ``system`` string (a
+          ``role: system`` first message is rejected).
+        - ``assistant`` turns replay the raw Anthropic content when present
+          (thinking blocks must be passed back unchanged with their tool_use
+          blocks); otherwise text + ``tool_use`` blocks are built from
+          ``tool_calls``.
+        - ``tool`` turns become one user message of ``tool_result`` blocks.
+        - Consecutive same-role turns are merged (tool results then the next
+          user instruction share one user message, results first).
         """
-        system_parts = [str(m["content"]) for m in messages if m.get("role") == "system"]
-        convo = [m for m in messages if m.get("role") != "system"]
-        return "\n\n".join(system_parts), convo
+        system_parts: list[str] = []
+        out: list[dict] = []
+
+        def push(role: str, blocks: list[dict]) -> None:
+            if not blocks:
+                return
+            if out and out[-1]["role"] == role:
+                out[-1]["content"].extend(blocks)
+            else:
+                out.append({"role": role, "content": list(blocks)})
+
+        for m in messages:
+            role = m.get("role")
+            if role == "system":
+                system_parts.append(str(m["content"]))
+            elif role == "user":
+                content = m["content"]
+                if not isinstance(content, list):
+                    content = [{"type": "text", "text": content}]
+                push("user", content)
+            elif role == "assistant":
+                native = m.get("native") or {}
+                if native.get("provider") == "anthropic":
+                    push("assistant", native["content"])
+                    continue
+                blocks = [{"type": "text", "text": m["content"]}] if m.get("content") else []
+                blocks += [
+                    {"type": "tool_use", "id": c["id"], "name": c["name"], "input": c["args"]}
+                    for c in m.get("tool_calls", [])
+                ]
+                push("assistant", blocks)
+            elif role == "tool":
+                push(
+                    "user",
+                    [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": r["id"],
+                            "content": r["content"],
+                            **({"is_error": True} if r.get("is_error") else {}),
+                        }
+                        for r in m["results"]
+                    ],
+                )
+        return "\n\n".join(system_parts), out
 
     async def complete(self, request: LLMRequest) -> ModelResponse:  # pragma: no cover
         start = time.perf_counter()
-        system, convo = self._split_system(request.messages)
+        system, convo = self._to_anthropic_messages(request.messages)
         # Note: sampling params (temperature/top_p/top_k) were removed on the
         # Claude 5-family models and the current SDK drops `temperature` from
         # messages.create() entirely -- so it is intentionally not passed.
@@ -88,6 +140,8 @@ class AnthropicProvider:
             kwargs["thinking"] = {"type": "disabled"}
         if self.effort:
             kwargs["output_config"] = {"effort": self.effort}
+        if self.prompt_cache:
+            kwargs["cache_control"] = {"type": "ephemeral"}
         try:
             message = await self._client.messages.create(**kwargs)
         except Exception as exc:  # noqa: BLE001 - report, never crash the sweep
@@ -98,17 +152,30 @@ class AnthropicProvider:
 
         latency_ms = (time.perf_counter() - start) * 1000
         tool_calls = [
-            PredictedCall(name=block.name, args=dict(block.input))
+            PredictedCall(name=block.name, args=dict(block.input), id=block.id)
             for block in message.content
             if getattr(block, "type", None) == "tool_use"
         ]
         text = "".join(
             block.text for block in message.content if getattr(block, "type", None) == "text"
         )
+        usage = message.usage
+        cache_read = getattr(usage, "cache_read_input_tokens", None) or 0
+        cache_write = getattr(usage, "cache_creation_input_tokens", None) or 0
         return ModelResponse(
             tool_calls=tool_calls,
             text=text,
-            prompt_tokens=message.usage.input_tokens,
-            completion_tokens=message.usage.output_tokens,
+            # prompt_tokens counts the whole prompt; the cache fields say how
+            # much of it was billed at cache-read / cache-write rates.
+            prompt_tokens=usage.input_tokens + cache_read + cache_write,
+            completion_tokens=usage.output_tokens,
+            cache_read_tokens=cache_read,
+            cache_write_tokens=cache_write,
             latency_ms=latency_ms,
+            native={
+                "provider": "anthropic",
+                "content": [
+                    block.model_dump(mode="json", exclude_none=True) for block in message.content
+                ],
+            },
         )

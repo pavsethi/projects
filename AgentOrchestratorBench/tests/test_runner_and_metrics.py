@@ -1,5 +1,7 @@
 import pathlib
 
+import pytest
+
 from orchbench.metrics import aggregate, estimate_cost_usd
 from orchbench.orchestrators.handrolled import HandRolledOrchestrator
 from orchbench.providers.mock import MockProvider, QualityProfile, build_fixtures
@@ -52,6 +54,14 @@ def test_cost_estimate_uses_pricing_table():
     # 1M input tokens of a $3/1M model = $3.
     assert estimate_cost_usd(1_000_000, 0, "mock-model") == 3.0
     assert estimate_cost_usd(0, 1_000_000, "mock-model") == 15.0
+
+
+def test_cost_estimate_prices_cached_tokens():
+    # 1M prompt tokens: 600k cache reads (0.1x), 100k cache writes (1.25x), 300k plain.
+    cost = estimate_cost_usd(
+        1_000_000, 0, "claude-sonnet-5", cache_read_tokens=600_000, cache_write_tokens=100_000
+    )
+    assert cost == pytest.approx((300_000 + 60_000 + 125_000) * 2.0 / 1_000_000)
 
 
 async def test_seeds_are_recorded():

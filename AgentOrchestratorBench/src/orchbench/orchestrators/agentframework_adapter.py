@@ -82,7 +82,11 @@ class AgentFrameworkOrchestrator:
                     except json.JSONDecodeError:
                         args = {}
                 calls.append(
-                    PredictedCall(name=content.name, args=args if isinstance(args, dict) else {})
+                    PredictedCall(
+                        name=content.name,
+                        args=args if isinstance(args, dict) else {},
+                        id=getattr(content, "call_id", None),
+                    )
                 )
         return calls
 
@@ -108,11 +112,12 @@ class AgentFrameworkOrchestrator:
                     raise NotImplementedError("streaming is not used by the benchmark")
                 model_response = await provider.complete(request)
                 holder["response"] = model_response
+                # Carry the provider's call id through AF's Content so native
+                # tool-call history pairs results correctly; mock providers have
+                # none, and the shared driver assigns one (parity).
                 contents = [
-                    Content(
-                        type="function_call", call_id=f"call_{i}", name=c.name, arguments=c.args
-                    )
-                    for i, c in enumerate(model_response.tool_calls)
+                    Content(type="function_call", call_id=c.id, name=c.name, arguments=c.args)
+                    for c in model_response.tool_calls
                 ]
                 return ChatResponse(messages=[Message(role="assistant", contents=contents)])
 
@@ -158,14 +163,7 @@ class AgentFrameworkOrchestrator:
                 metadata={"task_id": scenario.id, "turn": turn_index},
             )
             predicted, mr = await self._call(provider, request)
-            return StepResult(
-                predicted=predicted,
-                text=mr.text,
-                prompt_tokens=mr.prompt_tokens,
-                completion_tokens=mr.completion_tokens,
-                latency_ms=mr.latency_ms,
-                error=mr.error,
-            )
+            return StepResult.from_response(mr, predicted)
 
         return await drive_episode(
             scenario,

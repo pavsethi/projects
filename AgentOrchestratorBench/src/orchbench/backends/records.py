@@ -113,6 +113,12 @@ class RecordsBackend:
                 return False
         return bool(clauses)
 
+    def end_user_turn(self, turn: int) -> None:
+        """Single goal check at the end; nothing to grade per user turn."""
+
+    def grade_detail(self) -> dict:
+        return {}
+
 
 def oracle_plan(scenario: Any) -> list[list[PredictedCall]]:
     """A correct per-turn call plan that solves the scenario.

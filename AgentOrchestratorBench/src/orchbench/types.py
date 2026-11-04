@@ -50,6 +50,10 @@ class PredictedCall(BaseModel):
 
     name: str
     args: dict[str, Any] = Field(default_factory=dict)
+    # Provider-assigned call id (e.g. Anthropic ``tool_use.id``), used to pair a
+    # tool result with its call in native tool-call history. None on mock/replay
+    # providers; the episode driver assigns a deterministic id when absent.
+    id: str | None = None
 
 
 class Task(BaseModel):
@@ -92,6 +96,14 @@ class ModelResponse(BaseModel):
     error: str | None = None
     # True when this response was served from cache (no billable call made).
     cached: bool = False
+    # Prompt-cache accounting (subset of prompt_tokens): tokens read from /
+    # written to the provider's prompt cache, billed at different rates.
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    # The provider's raw assistant content, replayed verbatim in later requests
+    # (e.g. Anthropic thinking blocks must be passed back unchanged with their
+    # tool_use blocks). Shape: {"provider": <name>, "content": [...]}.
+    native: dict[str, Any] | None = None
 
     @property
     def total_tokens(self) -> int:
@@ -140,6 +152,12 @@ class FailureMode(str, Enum):
     STALL_LOOP = "stall_loop"  # repeated a call with no state change
     WRONG_ORDER = "wrong_order"  # right calls, a dependency was violated
     GAVE_UP = "gave_up"  # stopped calling tools before reaching the goal
+
+    # BFCL multi-turn checker verdicts (state + execution-response checks run
+    # after each user turn; see orchbench.backends.bfcl).
+    STATE_MISMATCH = "state_mismatch"  # world state differs from ground truth
+    RESPONSE_MISMATCH = "response_mismatch"  # a ground-truth result never produced
+    EMPTY_TURN = "empty_turn"  # made no call on a turn that required calls
 
 
 class GradeResult(BaseModel):
@@ -203,7 +221,15 @@ class Scenario(BaseModel):
     # Goal is checked by the backend's predicate against final state; shape is
     # backend-specific (e.g. {"field_equals": [{"record", "field", "value"}]}).
     goal: dict[str, Any] = Field(default_factory=dict)
+    # Cap on tool-calling model steps *per user turn* (exceeding it aborts the
+    # episode, as BFCL's force-quit does).
     max_turns: int = 8
+    # System prompt for the episode. None = orchbench's default multi-turn prompt;
+    # "" = no system prompt (BFCL function-calling mode sends none).
+    system_prompt: str | None = None
+    # Tools that become available only from a given user turn (BFCL miss_func):
+    # {user_turn_index: [ToolSpec, ...]}.
+    tools_added: dict[int, list[ToolSpec]] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -211,12 +237,15 @@ class TurnRecord(BaseModel):
     """One step of an episode: an assistant turn and the tool results it drove."""
 
     index: int
+    user_turn: int = 0  # which scripted user turn this model step belongs to
     role: str = "assistant"
     predicted: list[PredictedCall] = Field(default_factory=list)
     results: list[ToolResult] = Field(default_factory=list)
     text: str = ""
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
     latency_ms: float = 0.0
     error: str | None = None  # provider error on this turn, if any
     state_snapshot: dict[str, Any] = Field(default_factory=dict)
@@ -248,6 +277,9 @@ class Trajectory(BaseModel):
     failure_mode: FailureMode = FailureMode.NONE
     turns_to_success: int | None = None
     final_state: dict[str, Any] = Field(default_factory=dict)
+    # Backend-specific grading detail, e.g. BFCL's failing user turn and checker
+    # error type ({"failed_user_turn": 2, "error_type": "state_mismatch", ...}).
+    grade_detail: dict[str, Any] = Field(default_factory=dict)
 
     @property
     def total_tokens(self) -> int:

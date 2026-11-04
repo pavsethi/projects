@@ -61,27 +61,63 @@ MULTITURN_SYSTEM_PROMPT = (
 )
 
 
-def build_episode_messages(scenario: Scenario) -> list[dict]:
-    """Opening messages for an episode: system + the first scripted user turn."""
-    first = scenario.user_turns[0] if scenario.user_turns else ""
+def episode_opening(scenario: Scenario) -> list[dict]:
+    """Messages before the first user turn: the system prompt, if any.
+
+    ``scenario.system_prompt`` None -> orchbench's default; "" -> none at all
+    (BFCL's function-calling mode sends no system prompt).
+    """
+    prompt = MULTITURN_SYSTEM_PROMPT if scenario.system_prompt is None else scenario.system_prompt
+    return [{"role": "system", "content": prompt}] if prompt else []
+
+
+def user_message(text: str) -> dict:
+    return {"role": "user", "content": text}
+
+
+def assign_call_ids(calls: list[PredictedCall], step_index: int) -> list[PredictedCall]:
+    """Give every call an id (providers that don't assign one get a stable one).
+
+    Shared so every orchestrator produces byte-identical history (parity).
+    """
     return [
-        {"role": "system", "content": MULTITURN_SYSTEM_PROMPT},
-        {"role": "user", "content": first},
+        c if c.id else c.model_copy(update={"id": f"call_{step_index}_{i}"})
+        for i, c in enumerate(calls)
     ]
 
 
-def calls_to_text(calls: list[PredictedCall]) -> str:
-    """Serialise an assistant turn's tool calls for the message history.
+def assistant_message(text: str, calls: list[PredictedCall], native: dict | None) -> dict:
+    """One assistant step in provider-agnostic form.
 
-    Shared so every orchestrator formats history identically (parity). This is a
-    functional text encoding; mapping to a provider's native tool-call/tool-result
-    blocks (for the real Anthropic provider) is an M2 refinement.
+    ``tool_calls`` is the portable view; ``native`` is the provider's raw
+    content, which a provider replays verbatim when it recognises it (Anthropic
+    requires thinking blocks to be passed back unchanged alongside tool_use).
     """
-    return json.dumps([{"name": c.name, "arguments": c.args} for c in calls])
+    msg: dict = {
+        "role": "assistant",
+        "content": text,
+        "tool_calls": [{"id": c.id, "name": c.name, "args": c.args} for c in calls],
+    }
+    if native:
+        msg["native"] = native
+    return msg
 
 
-def results_to_text(results: list[ToolResult]) -> str:
-    """Serialise tool results as the next user turn."""
-    return json.dumps(
-        [{"call": r.call_id, "ok": r.ok, "result": r.content, "error": r.error} for r in results]
-    )
+def result_text(result: ToolResult) -> str:
+    """What the model sees for one tool result."""
+    if not result.ok:
+        return result.error or "Error"
+    if isinstance(result.content, str):
+        return result.content
+    return json.dumps(result.content, ensure_ascii=False)
+
+
+def tool_results_message(calls: list[PredictedCall], results: list[ToolResult]) -> dict:
+    """All results of one step, paired to their calls by id (one message)."""
+    return {
+        "role": "tool",
+        "results": [
+            {"id": c.id, "content": result_text(r), "is_error": not r.ok}
+            for c, r in zip(calls, results, strict=True)
+        ],
+    }

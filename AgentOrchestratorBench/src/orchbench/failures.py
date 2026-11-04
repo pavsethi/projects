@@ -78,6 +78,10 @@ def classify_trajectory(traj: Trajectory, *, had_error: bool, recovered: bool) -
         return FailureMode.NONE
     if traj.stop_reason == "provider_error":
         return FailureMode.PROVIDER_ERROR
+    # A backend with its own checker (BFCL) names the failure precisely.
+    graded = traj.grade_detail.get("failure_mode")
+    if graded:
+        return FailureMode(graded)
     if had_error and not recovered:
         return FailureMode.NO_RECOVERY
     if _has_stall(traj):

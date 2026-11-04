@@ -132,15 +132,10 @@ class HandRolledOrchestrator:
                     metadata={"task_id": scenario.id, "turn": turn_index},
                 )
             )
-            predicted = response.tool_calls or _parse_text_fallback(response.text)
-            return StepResult(
-                predicted=predicted,
-                text=response.text,
-                prompt_tokens=response.prompt_tokens,
-                completion_tokens=response.completion_tokens,
-                latency_ms=response.latency_ms,
-                error=response.error,
-            )
+            # Native tool calls only -- no text-parsing fallback here: the
+            # framework adapters have none, and a call recovered from prose has
+            # no tool-use id to pair a result with (parity + native history).
+            return StepResult.from_response(response, list(response.tool_calls))
 
         return await drive_episode(
             scenario,

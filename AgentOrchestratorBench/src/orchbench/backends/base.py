@@ -36,5 +36,22 @@ class ToolBackend(Protocol):
         ...
 
     def goal_reached(self, goal: dict) -> bool:
-        """Whether the final state satisfies the scenario's goal predicate."""
+        """Whether the state satisfies the scenario's goal predicate.
+
+        Checked after every tool step (a True stops the episode early) and once
+        at the end. A backend graded per user turn (BFCL) returns False until
+        the final user turn has been checked.
+        """
+        ...
+
+    def end_user_turn(self, turn: int) -> None:
+        """Called when the model finishes a scripted user turn (stops calling).
+
+        Per-turn checkers grade here (BFCL replays that turn's ground truth and
+        compares state and responses). Single-check backends do nothing.
+        """
+        ...
+
+    def grade_detail(self) -> dict:
+        """Backend-specific grading detail for the trajectory ({} if none)."""
         ...
