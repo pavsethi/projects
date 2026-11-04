@@ -86,6 +86,8 @@ async def test_sample_episodes_all_succeed_on_oracle():
     # Trajectories carry human-readable context (instruction + goal summary).
     assert all(t.instruction for t in trajectories)
     assert all(t.goal_summary for t in trajectories)
+    # No episode hit a tool error, so recovery is undefined -- not 0%.
+    assert aggregate_episodes(trajectories).recovery_rate is None
 
 
 async def test_no_recovery_failure():

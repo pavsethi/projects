@@ -129,7 +129,9 @@ class EpisodeReport(BaseModel):
 
     success_rate: float
     avg_turns_to_success: float | None  # mean turns among successes
-    recovery_rate: float  # of episodes that hit a tool error, fraction that still succeeded
+    # Of episodes that hit a tool error, the fraction that still succeeded.
+    # None when no episode hit an error: undefined, not 0% ("never recovers").
+    recovery_rate: float | None
     invalid_call_rate: float  # fraction of all calls the backend rejected
 
     total_tokens: int
@@ -158,7 +160,7 @@ def aggregate_episodes(trajectories: list[Trajectory]) -> EpisodeReport:
         return any(not r.ok for turn in t.turns for r in turn.results)
 
     errored = [t for t in trajectories if hit_error(t)]
-    recovery_rate = sum(1 for t in errored if t.succeeded) / len(errored) if errored else 0.0
+    recovery_rate = sum(1 for t in errored if t.succeeded) / len(errored) if errored else None
 
     total_calls = sum(len(turn.results) for t in trajectories for turn in t.turns)
     bad_calls = sum(1 for t in trajectories for turn in t.turns for r in turn.results if not r.ok)

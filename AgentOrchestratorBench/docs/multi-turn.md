@@ -230,8 +230,11 @@ M1** so UI and metrics parallelize.
 - **M4 — UI / trajectory explorer (eng, parallel after M1).** Static report from
   results JSON: leaderboard + per-task turn-by-turn drill-down, color-coded by
   failure mode; GitHub Pages via CI.
-- **M5 — real run + write-up (main dev).** Multi-turn `compare` on real Claude,
-  update `RESULTS.md` with the first result where frameworks genuinely differ.
+- **M5 — real run + write-up (main dev). ✅ first run done.** Sonnet 5, 4
+  scenarios × 3 orchestrators: 12/12 succeeded, no framework difference — the
+  sample scenarios saturate. Raw trajectories in `docs/runs/`, write-up in
+  `RESULTS.md` Part 2. Next: harder scenarios (ambiguity, injected errors,
+  longer chains) and multiple interleaved seeds, so frameworks *can* differ.
 
 ## 13. Risks
 

@@ -73,8 +73,9 @@ def _require_key(provider: str) -> None:
     raise typer.Exit(code=2)
 
 
-def _fmt_pct(x: float) -> str:
-    return f"{x * 100:5.1f}%"
+def _fmt_pct(x: float | None) -> str:
+    """Percent, or n/a for an undefined rate (e.g. recovery with no errors)."""
+    return "   n/a" if x is None else f"{x * 100:5.1f}%"
 
 
 def _print_report(report: SuiteReport, label: str | None = None) -> None:

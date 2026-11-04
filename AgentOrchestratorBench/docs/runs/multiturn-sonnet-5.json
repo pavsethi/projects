@@ -1,0 +1,103 @@
+{
+  "meta": {"command": "episodes", "provider": "anthropic", "model": "claude-sonnet-5", "effort": "low", "data": "data/multiturn_sample.jsonl"},
+  "trajectories": [
+    {"scenario_id": "ship_order", "suite": "multiturn", "category": "multi_turn", "orchestrator": "handrolled", "provider": "anthropic", "model": "claude-sonnet-5", "seed": 0,
+     "instruction": "Mark Alice's order as shipped.", "goal_summary": "\"Alice order\" → status = shipped",
+     "turns": [
+      {"index": 0, "role": "assistant", "predicted": [{"name": "search_records", "args": {"query": "Alice"}}], "results": [{"call_id": "search_records", "ok": true, "content": [{"id": "r1", "name": "Alice order"}], "error": null}], "text": "", "prompt_tokens": 733, "completion_tokens": 63, "latency_ms": 1561.8059590924531, "error": null, "state_snapshot": {"records": {"r1": {"name": "Alice order", "status": "pending"}, "r2": {"name": "Bob order", "status": "pending"}}}},
+      {"index": 1, "role": "assistant", "predicted": [{"name": "update_record", "args": {"record_id": "r1", "field": "status", "value": "shipped"}}], "results": [{"call_id": "update_record", "ok": true, "content": {"updated": "r1", "status": "shipped"}, "error": null}], "text": "", "prompt_tokens": 809, "completion_tokens": 94, "latency_ms": 1386.810875032097, "error": null, "state_snapshot": {"records": {"r1": {"name": "Alice order", "status": "shipped"}, "r2": {"name": "Bob order", "status": "pending"}}}}
+     ],
+     "succeeded": true, "stop_reason": "goal", "failure_mode": "none", "turns_to_success": 2,
+     "final_state": {"records": {"r1": {"name": "Alice order", "status": "shipped"}, "r2": {"name": "Bob order", "status": "pending"}}}},
+    {"scenario_id": "bump_priority", "suite": "multiturn", "category": "multi_turn", "orchestrator": "handrolled", "provider": "anthropic", "model": "claude-sonnet-5", "seed": 0,
+     "instruction": "The login bug is urgent — set its priority to high.", "goal_summary": "\"Fix login bug\" → priority = high",
+     "turns": [
+      {"index": 0, "role": "assistant", "predicted": [{"name": "search_records", "args": {"query": "login bug"}}], "results": [{"call_id": "search_records", "ok": true, "content": [{"id": "t2", "name": "Fix login bug"}], "error": null}], "text": "", "prompt_tokens": 736, "completion_tokens": 65, "latency_ms": 1572.3560419864953, "error": null, "state_snapshot": {"records": {"t1": {"name": "Deploy website", "priority": "low"}, "t2": {"name": "Fix login bug", "priority": "low"}}}},
+      {"index": 1, "role": "assistant", "predicted": [{"name": "update_record", "args": {"record_id": "t2", "field": "priority", "value": "high"}}], "results": [{"call_id": "update_record", "ok": true, "content": {"updated": "t2", "priority": "high"}, "error": null}], "text": "", "prompt_tokens": 814, "completion_tokens": 93, "latency_ms": 1460.6718749273568, "error": null, "state_snapshot": {"records": {"t1": {"name": "Deploy website", "priority": "low"}, "t2": {"name": "Fix login bug", "priority": "high"}}}}
+     ],
+     "succeeded": true, "stop_reason": "goal", "failure_mode": "none", "turns_to_success": 2,
+     "final_state": {"records": {"t1": {"name": "Deploy website", "priority": "low"}, "t2": {"name": "Fix login bug", "priority": "high"}}}},
+    {"scenario_id": "cancel_sub", "suite": "multiturn", "category": "multi_turn", "orchestrator": "handrolled", "provider": "anthropic", "model": "claude-sonnet-5", "seed": 0,
+     "instruction": "Cancel Carol's subscription (set its status to cancelled).", "goal_summary": "\"Carol subscription\" → status = cancelled",
+     "turns": [
+      {"index": 0, "role": "assistant", "predicted": [{"name": "search_records", "args": {"query": "Carol"}}], "results": [{"call_id": "search_records", "ok": true, "content": [{"id": "c100", "name": "Carol subscription"}], "error": null}], "text": "", "prompt_tokens": 741, "completion_tokens": 49, "latency_ms": 1527.9299169778824, "error": null, "state_snapshot": {"records": {"c100": {"name": "Carol subscription", "status": "active"}}}},
+      {"index": 1, "role": "assistant", "predicted": [{"name": "update_record", "args": {"record_id": "c100", "field": "status", "value": "cancelled"}}], "results": [{"call_id": "update_record", "ok": true, "content": {"updated": "c100", "status": "cancelled"}, "error": null}], "text": "", "prompt_tokens": 819, "completion_tokens": 105, "latency_ms": 1661.3816660828888, "error": null, "state_snapshot": {"records": {"c100": {"name": "Carol subscription", "status": "cancelled"}}}}
+     ],
+     "succeeded": true, "stop_reason": "goal", "failure_mode": "none", "turns_to_success": 2,
+     "final_state": {"records": {"c100": {"name": "Carol subscription", "status": "cancelled"}}}},
+    {"scenario_id": "close_ticket", "suite": "multiturn", "category": "multi_turn", "orchestrator": "handrolled", "provider": "anthropic", "model": "claude-sonnet-5", "seed": 0,
+     "instruction": "Close the ticket about the payment page.", "goal_summary": "\"Payment page error\" → status = closed",
+     "turns": [
+      {"index": 0, "role": "assistant", "predicted": [{"name": "search_records", "args": {"query": "payment page"}}], "results": [{"call_id": "search_records", "ok": true, "content": [{"id": "k1", "name": "Payment page error"}], "error": null}], "text": "", "prompt_tokens": 732, "completion_tokens": 64, "latency_ms": 1587.575500132516, "error": null, "state_snapshot": {"records": {"k1": {"name": "Payment page error", "status": "open"}, "k2": {"name": "Homepage typo", "status": "open"}}}},
+      {"index": 1, "role": "assistant", "predicted": [{"name": "get_record", "args": {"record_id": "k1"}}], "results": [{"call_id": "get_record", "ok": true, "content": {"name": "Payment page error", "status": "open"}, "error": null}], "text": "", "prompt_tokens": 809, "completion_tokens": 69, "latency_ms": 1351.7763749696314, "error": null, "state_snapshot": {"records": {"k1": {"name": "Payment page error", "status": "open"}, "k2": {"name": "Homepage typo", "status": "open"}}}},
+      {"index": 2, "role": "assistant", "predicted": [{"name": "update_record", "args": {"record_id": "k1", "field": "status", "value": "closed"}}], "results": [{"call_id": "update_record", "ok": true, "content": {"updated": "k1", "status": "closed"}, "error": null}], "text": "", "prompt_tokens": 885, "completion_tokens": 93, "latency_ms": 1423.559790942818, "error": null, "state_snapshot": {"records": {"k1": {"name": "Payment page error", "status": "closed"}, "k2": {"name": "Homepage typo", "status": "open"}}}}
+     ],
+     "succeeded": true, "stop_reason": "goal", "failure_mode": "none", "turns_to_success": 3,
+     "final_state": {"records": {"k1": {"name": "Payment page error", "status": "closed"}, "k2": {"name": "Homepage typo", "status": "open"}}}},
+    {"scenario_id": "ship_order", "suite": "multiturn", "category": "multi_turn", "orchestrator": "langgraph", "provider": "anthropic", "model": "claude-sonnet-5", "seed": 0,
+     "instruction": "Mark Alice's order as shipped.", "goal_summary": "\"Alice order\" → status = shipped",
+     "turns": [
+      {"index": 0, "role": "assistant", "predicted": [{"name": "search_records", "args": {"query": "Alice"}}], "results": [{"call_id": "search_records", "ok": true, "content": [{"id": "r1", "name": "Alice order"}], "error": null}], "text": "", "prompt_tokens": 733, "completion_tokens": 49, "latency_ms": 1524.0021250210702, "error": null, "state_snapshot": {"records": {"r1": {"name": "Alice order", "status": "pending"}, "r2": {"name": "Bob order", "status": "pending"}}}},
+      {"index": 1, "role": "assistant", "predicted": [{"name": "update_record", "args": {"record_id": "r1", "field": "status", "value": "shipped"}}], "results": [{"call_id": "update_record", "ok": true, "content": {"updated": "r1", "status": "shipped"}, "error": null}], "text": "", "prompt_tokens": 809, "completion_tokens": 94, "latency_ms": 1563.1540000904351, "error": null, "state_snapshot": {"records": {"r1": {"name": "Alice order", "status": "shipped"}, "r2": {"name": "Bob order", "status": "pending"}}}}
+     ],
+     "succeeded": true, "stop_reason": "goal", "failure_mode": "none", "turns_to_success": 2,
+     "final_state": {"records": {"r1": {"name": "Alice order", "status": "shipped"}, "r2": {"name": "Bob order", "status": "pending"}}}},
+    {"scenario_id": "bump_priority", "suite": "multiturn", "category": "multi_turn", "orchestrator": "langgraph", "provider": "anthropic", "model": "claude-sonnet-5", "seed": 0,
+     "instruction": "The login bug is urgent — set its priority to high.", "goal_summary": "\"Fix login bug\" → priority = high",
+     "turns": [
+      {"index": 0, "role": "assistant", "predicted": [{"name": "search_records", "args": {"query": "login bug"}}], "results": [{"call_id": "search_records", "ok": true, "content": [{"id": "t2", "name": "Fix login bug"}], "error": null}], "text": "", "prompt_tokens": 736, "completion_tokens": 49, "latency_ms": 1524.2075000423938, "error": null, "state_snapshot": {"records": {"t1": {"name": "Deploy website", "priority": "low"}, "t2": {"name": "Fix login bug", "priority": "low"}}}},
+      {"index": 1, "role": "assistant", "predicted": [{"name": "update_record", "args": {"record_id": "t2", "field": "priority", "value": "high"}}], "results": [{"call_id": "update_record", "ok": true, "content": {"updated": "t2", "priority": "high"}, "error": null}], "text": "", "prompt_tokens": 814, "completion_tokens": 110, "latency_ms": 1646.3438330683857, "error": null, "state_snapshot": {"records": {"t1": {"name": "Deploy website", "priority": "low"}, "t2": {"name": "Fix login bug", "priority": "high"}}}}
+     ],
+     "succeeded": true, "stop_reason": "goal", "failure_mode": "none", "turns_to_success": 2,
+     "final_state": {"records": {"t1": {"name": "Deploy website", "priority": "low"}, "t2": {"name": "Fix login bug", "priority": "high"}}}},
+    {"scenario_id": "cancel_sub", "suite": "multiturn", "category": "multi_turn", "orchestrator": "langgraph", "provider": "anthropic", "model": "claude-sonnet-5", "seed": 0,
+     "instruction": "Cancel Carol's subscription (set its status to cancelled).", "goal_summary": "\"Carol subscription\" → status = cancelled",
+     "turns": [
+      {"index": 0, "role": "assistant", "predicted": [{"name": "search_records", "args": {"query": "Carol"}}], "results": [{"call_id": "search_records", "ok": true, "content": [{"id": "c100", "name": "Carol subscription"}], "error": null}], "text": "", "prompt_tokens": 741, "completion_tokens": 66, "latency_ms": 1527.0993751473725, "error": null, "state_snapshot": {"records": {"c100": {"name": "Carol subscription", "status": "active"}}}},
+      {"index": 1, "role": "assistant", "predicted": [{"name": "update_record", "args": {"record_id": "c100", "field": "status", "value": "cancelled"}}], "results": [{"call_id": "update_record", "ok": true, "content": {"updated": "c100", "status": "cancelled"}, "error": null}], "text": "", "prompt_tokens": 819, "completion_tokens": 105, "latency_ms": 1502.1636250894517, "error": null, "state_snapshot": {"records": {"c100": {"name": "Carol subscription", "status": "cancelled"}}}}
+     ],
+     "succeeded": true, "stop_reason": "goal", "failure_mode": "none", "turns_to_success": 2,
+     "final_state": {"records": {"c100": {"name": "Carol subscription", "status": "cancelled"}}}},
+    {"scenario_id": "close_ticket", "suite": "multiturn", "category": "multi_turn", "orchestrator": "langgraph", "provider": "anthropic", "model": "claude-sonnet-5", "seed": 0,
+     "instruction": "Close the ticket about the payment page.", "goal_summary": "\"Payment page error\" → status = closed",
+     "turns": [
+      {"index": 0, "role": "assistant", "predicted": [{"name": "search_records", "args": {"query": "payment page"}}], "results": [{"call_id": "search_records", "ok": true, "content": [{"id": "k1", "name": "Payment page error"}], "error": null}], "text": "", "prompt_tokens": 732, "completion_tokens": 64, "latency_ms": 1527.3278339300305, "error": null, "state_snapshot": {"records": {"k1": {"name": "Payment page error", "status": "open"}, "k2": {"name": "Homepage typo", "status": "open"}}}},
+      {"index": 1, "role": "assistant", "predicted": [{"name": "update_record", "args": {"record_id": "k1", "field": "status", "value": "closed"}}], "results": [{"call_id": "update_record", "ok": true, "content": {"updated": "k1", "status": "closed"}, "error": null}], "text": "", "prompt_tokens": 809, "completion_tokens": 93, "latency_ms": 1547.514291945845, "error": null, "state_snapshot": {"records": {"k1": {"name": "Payment page error", "status": "closed"}, "k2": {"name": "Homepage typo", "status": "open"}}}}
+     ],
+     "succeeded": true, "stop_reason": "goal", "failure_mode": "none", "turns_to_success": 2,
+     "final_state": {"records": {"k1": {"name": "Payment page error", "status": "closed"}, "k2": {"name": "Homepage typo", "status": "open"}}}},
+    {"scenario_id": "ship_order", "suite": "multiturn", "category": "multi_turn", "orchestrator": "agentframework", "provider": "anthropic", "model": "claude-sonnet-5", "seed": 0,
+     "instruction": "Mark Alice's order as shipped.", "goal_summary": "\"Alice order\" → status = shipped",
+     "turns": [
+      {"index": 0, "role": "assistant", "predicted": [{"name": "search_records", "args": {"query": "Alice"}}], "results": [{"call_id": "search_records", "ok": true, "content": [{"id": "r1", "name": "Alice order"}], "error": null}], "text": "", "prompt_tokens": 733, "completion_tokens": 49, "latency_ms": 1257.9852079506963, "error": null, "state_snapshot": {"records": {"r1": {"name": "Alice order", "status": "pending"}, "r2": {"name": "Bob order", "status": "pending"}}}},
+      {"index": 1, "role": "assistant", "predicted": [{"name": "update_record", "args": {"record_id": "r1", "field": "status", "value": "shipped"}}], "results": [{"call_id": "update_record", "ok": true, "content": {"updated": "r1", "status": "shipped"}, "error": null}], "text": "", "prompt_tokens": 809, "completion_tokens": 108, "latency_ms": 1421.5424589347094, "error": null, "state_snapshot": {"records": {"r1": {"name": "Alice order", "status": "shipped"}, "r2": {"name": "Bob order", "status": "pending"}}}}
+     ],
+     "succeeded": true, "stop_reason": "goal", "failure_mode": "none", "turns_to_success": 2,
+     "final_state": {"records": {"r1": {"name": "Alice order", "status": "shipped"}, "r2": {"name": "Bob order", "status": "pending"}}}},
+    {"scenario_id": "bump_priority", "suite": "multiturn", "category": "multi_turn", "orchestrator": "agentframework", "provider": "anthropic", "model": "claude-sonnet-5", "seed": 0,
+     "instruction": "The login bug is urgent — set its priority to high.", "goal_summary": "\"Fix login bug\" → priority = high",
+     "turns": [
+      {"index": 0, "role": "assistant", "predicted": [{"name": "search_records", "args": {"query": "login bug"}}], "results": [{"call_id": "search_records", "ok": true, "content": [{"id": "t2", "name": "Fix login bug"}], "error": null}], "text": "", "prompt_tokens": 736, "completion_tokens": 49, "latency_ms": 1269.2859170492738, "error": null, "state_snapshot": {"records": {"t1": {"name": "Deploy website", "priority": "low"}, "t2": {"name": "Fix login bug", "priority": "low"}}}},
+      {"index": 1, "role": "assistant", "predicted": [{"name": "update_record", "args": {"record_id": "t2", "field": "priority", "value": "high"}}], "results": [{"call_id": "update_record", "ok": true, "content": {"updated": "t2", "priority": "high"}, "error": null}], "text": "", "prompt_tokens": 814, "completion_tokens": 93, "latency_ms": 1325.453749857843, "error": null, "state_snapshot": {"records": {"t1": {"name": "Deploy website", "priority": "low"}, "t2": {"name": "Fix login bug", "priority": "high"}}}}
+     ],
+     "succeeded": true, "stop_reason": "goal", "failure_mode": "none", "turns_to_success": 2,
+     "final_state": {"records": {"t1": {"name": "Deploy website", "priority": "low"}, "t2": {"name": "Fix login bug", "priority": "high"}}}},
+    {"scenario_id": "cancel_sub", "suite": "multiturn", "category": "multi_turn", "orchestrator": "agentframework", "provider": "anthropic", "model": "claude-sonnet-5", "seed": 0,
+     "instruction": "Cancel Carol's subscription (set its status to cancelled).", "goal_summary": "\"Carol subscription\" → status = cancelled",
+     "turns": [
+      {"index": 0, "role": "assistant", "predicted": [{"name": "search_records", "args": {"query": "Carol"}}], "results": [{"call_id": "search_records", "ok": true, "content": [{"id": "c100", "name": "Carol subscription"}], "error": null}], "text": "", "prompt_tokens": 741, "completion_tokens": 49, "latency_ms": 1247.1159580163658, "error": null, "state_snapshot": {"records": {"c100": {"name": "Carol subscription", "status": "active"}}}},
+      {"index": 1, "role": "assistant", "predicted": [{"name": "update_record", "args": {"record_id": "c100", "field": "status", "value": "cancelled"}}], "results": [{"call_id": "update_record", "ok": true, "content": {"updated": "c100", "status": "cancelled"}, "error": null}], "text": "", "prompt_tokens": 819, "completion_tokens": 95, "latency_ms": 1327.6207498274744, "error": null, "state_snapshot": {"records": {"c100": {"name": "Carol subscription", "status": "cancelled"}}}}
+     ],
+     "succeeded": true, "stop_reason": "goal", "failure_mode": "none", "turns_to_success": 2,
+     "final_state": {"records": {"c100": {"name": "Carol subscription", "status": "cancelled"}}}},
+    {"scenario_id": "close_ticket", "suite": "multiturn", "category": "multi_turn", "orchestrator": "agentframework", "provider": "anthropic", "model": "claude-sonnet-5", "seed": 0,
+     "instruction": "Close the ticket about the payment page.", "goal_summary": "\"Payment page error\" → status = closed",
+     "turns": [
+      {"index": 0, "role": "assistant", "predicted": [{"name": "search_records", "args": {"query": "payment page"}}], "results": [{"call_id": "search_records", "ok": true, "content": [{"id": "k1", "name": "Payment page error"}], "error": null}], "text": "", "prompt_tokens": 732, "completion_tokens": 49, "latency_ms": 1204.893542220816, "error": null, "state_snapshot": {"records": {"k1": {"name": "Payment page error", "status": "open"}, "k2": {"name": "Homepage typo", "status": "open"}}}},
+      {"index": 1, "role": "assistant", "predicted": [{"name": "get_record", "args": {"record_id": "k1"}}], "results": [{"call_id": "get_record", "ok": true, "content": {"name": "Payment page error", "status": "open"}, "error": null}], "text": "", "prompt_tokens": 809, "completion_tokens": 71, "latency_ms": 1291.8544160202146, "error": null, "state_snapshot": {"records": {"k1": {"name": "Payment page error", "status": "open"}, "k2": {"name": "Homepage typo", "status": "open"}}}},
+      {"index": 2, "role": "assistant", "predicted": [{"name": "update_record", "args": {"record_id": "k1", "field": "status", "value": "closed"}}], "results": [{"call_id": "update_record", "ok": true, "content": {"updated": "k1", "status": "closed"}, "error": null}], "text": "I'll close this ticket now.", "prompt_tokens": 885, "completion_tokens": 104, "latency_ms": 1529.5549160800874, "error": null, "state_snapshot": {"records": {"k1": {"name": "Payment page error", "status": "closed"}, "k2": {"name": "Homepage typo", "status": "open"}}}}
+     ],
+     "succeeded": true, "stop_reason": "goal", "failure_mode": "none", "turns_to_success": 3,
+     "final_state": {"records": {"k1": {"name": "Payment page error", "status": "closed"}, "k2": {"name": "Homepage typo", "status": "open"}}}}
+  ]
+}
